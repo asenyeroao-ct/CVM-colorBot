@@ -1,4 +1,10 @@
-# CVM-colorBot
+<div align="center">
+  <img src="cvm.jpg" alt="CVM-colorBot Logo" width="200"/>
+  
+  # CVM-colorBot
+  
+  [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WVjNThUb56)
+</div>
 
 CVM colorbot is a computer-vision mouse aiming system using HSV color detection with MAKCU hardware. Supports NDI, UDP, and Capture Card input, offering customizable sensitivity, smoothing, FOV settings, and anti-smoke filtering for precise 2-PC aiming workflows.
 
@@ -201,5 +207,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Support
 
-For issues, questions, or feature requests, please open an issue on GitHub.
+- **Discord**: [Join our Discord server](https://discord.gg/WVjNThUb56) for community support, discussions, and updates
+- **GitHub Issues**: For bug reports, questions, or feature requests, please open an issue on [GitHub](https://github.com/asenyeroao-ct/CVM-colorBot/issues)
 

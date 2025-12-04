@@ -1,4 +1,10 @@
-# CVM-colorBot
+<div align="center">
+  <img src="cvm.jpg" alt="CVM-colorBot Logo" width="200"/>
+  
+  # CVM-colorBot
+  
+  [![Discord](https://img.shields.io/badge/Discord-加入服务器-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WVjNThUb56)
+</div>
 
 CVM colorbot 是一个基于计算机视觉的鼠标瞄准系统，使用 HSV 颜色检测技术，配合 MAKCU 硬件。支持 NDI、UDP 和采集卡输入，提供可自定义的灵敏度、平滑度、FOV 设置和反烟雾过滤功能，适用于精确的双 PC 瞄准工作流程。
 
@@ -201,5 +207,6 @@ CVM-colorBot/
 
 ## 支持
 
-如有问题、疑问或功能请求，请在 GitHub 上提交 issue。
+- **Discord**：加入我们的 [Discord 服务器](https://discord.gg/WVjNThUb56) 获取社区支持、讨论和更新
+- **GitHub Issues**：如需报告错误、提问或功能请求，请在 [GitHub](https://github.com/asenyeroao-ct/CVM-colorBot/issues) 上提交 issue
 
