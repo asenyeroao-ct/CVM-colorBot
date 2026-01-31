@@ -5,8 +5,8 @@ import cv2
 # 導入 OBS_UDP 模組 (使用 OBS_UDP.py)
 try:
     # 優先使用包導入方式 (從 OBS_UDP.py)
-        from .OBS_UDP import OBS_UDP_Manager
-        HAS_UDP = True
+    from .OBS_UDP import OBS_UDP_Manager
+    HAS_UDP = True
     print("[Capture] OBS_UDP module loaded successfully from OBS_UDP.py")
 except ImportError as e:
     HAS_UDP = False
