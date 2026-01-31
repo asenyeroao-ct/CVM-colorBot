@@ -64,3 +64,11 @@ logs/
 ._*
 .Spotlight-V100
 .Trashes
+
+# GitHub Actions - Keep workflows, ignore setup files
+.github/setup-sync.ps1
+.github/CONFIG_STEPS.md
+.github/TEST_SYNC.md
+.github/GENERATE_SSH_KEY.md
+.github/SYNC_SETUP.md
+.github/TROUBLESHOOTING.md

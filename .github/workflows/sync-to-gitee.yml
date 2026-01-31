@@ -4,32 +4,31 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'version.json'
-      - '**.py'
-      - '**.json'
-      - '**.md'
-      - '**.txt'
-      - '**.bat'
-      - '**.ps1'
-  workflow_dispatch:
+  workflow_dispatch:  # Allow manual trigger
 
 jobs:
-  sync:
+  repo-sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Sync to Gitee
-        uses: wearerequired/git-mirror-action@master
+      - name: Sync GitHub to Gitee
+        uses: Yikun/hub-mirror-action@master
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
+          # Gitee SSH private key (for authentication)
+          GITEE_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
         with:
-          source-repo: git@github.com:asenyeroao-ct/CVM-colorBot.git
-          destination-repo: git@gitee.com:asenyeroao-ct/CVM-colorBot.git
-
-      - name: Build Gitee Pages
-        uses: yanglbme/gitee-pages-action@main
-        with:
-          gitee-username: asenyeroao-ct
-          gitee-password: ${{ secrets.GITEE_PASSWORD }}
-          gitee-repo: asenyeroao-ct/CVM-colorBot
-          branch: main
+          # Source: GitHub repository (format: github/username)
+          src: github/asenyeroao-ct
+          # Destination: Gitee repository (format: gitee/username)
+          dst: gitee/asenyeroao-ct
+          # Gitee SSH private key (for authentication)
+          dst_key: ${{ secrets.GITEE_PRIVATE_KEY }}
+          # Gitee access token (for API operations)
+          dst_token: ${{ secrets.GITEE_TOKEN }}
+          # Static list: only sync this specific repository
+          static_list: CVM-colorBot
+          # Force update (overwrite existing content)
+          force_update: true
+          # Account type: user
+          account_type: user
+          # White list: only sync this repository
+          white_list: CVM-colorBot
