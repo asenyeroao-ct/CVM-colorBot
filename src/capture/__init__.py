@@ -1,0 +1,2 @@
+# Capture package initialization
+

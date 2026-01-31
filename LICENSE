@@ -1,0 +1,123 @@
+Copyright (c) 2025 asenyeroao-ct
+All rights reserved.
+
+────────────────────────────────────────────
+中文授權條款（正式版）
+────────────────────────────────────────────
+
+一、著作權聲明
+本專案（包含原始碼、圖片、配置檔、文件與所有相關內容）之著作權及其所有智慧財產權，均由原作者 asenyeroao-ct 所有。除本授權條款允許之外，任何人不得以任何方式使用、複製、修改、散佈或利用本專案。
+
+二、授權範圍
+使用者被授權進行：
+1. 個人、非商業性質的安裝與使用。
+2. 閱讀、研究、修改本專案原始碼。
+3. 將修改後的版本上傳到 GitHub、GitLab、Gitee 等代碼託管平台。
+4. 製作衍生作品和合併其他專案。
+
+**重要條件**：所有使用、修改、重新發布本專案的行為，都必須清楚標註原作者 **asenyeroao-ct**。
+
+三、禁止行為
+未經原作者書面授權，嚴禁：
+
+1. **商業用途**
+   - 禁止直接或間接用於收費服務、付費產品、代安裝、技術支援
+   - 禁止以任何方式盈利，包括廣告收益、訂閱服務、商業集成
+
+2. **移除或隱藏著作權聲明**
+   - 禁止刪除、改動 LICENSE 文件中的原作者標註
+   - 禁止移除或隱藏原作者名稱 **asenyeroao-ct**
+   - 禁止加入誤導性聲明，暗示他人擁有本專案著作權
+   - 在重新發布時，必須保留原始 LICENSE 文件或明確標註原作者
+
+四、使用者義務
+使用者在允許範圍內使用、修改或重新發布本專案時，必須：
+
+1. **明確標註原作者**：在所有發布的版本中，必須清楚標示原作者名稱 **asenyeroao-ct**
+2. **保留著作權聲明**：不得隱藏或移除 LICENSE 文件中的原作者標註
+3. **標註修改說明**：如果修改了代碼，建議在 README 或代碼註釋中說明修改內容
+4. **保留原始授權**：重新發布時，必須保留本 LICENSE 文件或明確引用原始授權條款
+
+五、免責聲明
+1. 本專案以「現狀」提供，不附帶任何形式之明示或默示擔保。
+2. 原作者不對因使用本專案而導致的任何損害、損失、資料遺失、系統異常或法律糾紛負責。
+3. 使用者需自行承擔所有使用風險。
+
+六、授權事項
+本授權明確授予：
+- **修改權**：允許修改原始碼
+- **分發權**：允許重新發布修改或未修改的版本（需標註原作者）
+- **合併權**：允許與其他專案合併（需標註原作者）
+
+本授權不授予：
+- 專利權
+- 商標使用權
+- 商用許可（需另行授權）
+- 再授權權
+
+七、授權外使用
+任何超出本授權範圍的使用行為，必須事先取得原作者 **書面授權**，否則視為侵權。
+
+────────────────────────────────────────────
+English License Terms (Full Version)
+────────────────────────────────────────────
+
+1. Copyright Notice
+All source code, documents, images, configuration files, and related materials in this project are the intellectual property of the original author, asenyeroao-ct. Except as explicitly permitted in this license, no user may copy, modify, distribute, or utilize the project in any form.
+
+2. Permitted Use
+Users are granted permission for:
+1) Personal, non-commercial installation and use.
+2) Reading, studying, and modifying the source code.
+3) Uploading modified versions to code hosting platforms (GitHub, GitLab, Gitee, etc.).
+4) Creating derivative works and merging with other projects.
+
+**Important Condition**: All use, modification, and redistribution of this project must clearly credit the original author **asenyeroao-ct**.
+
+3. Prohibited Actions
+Without prior written permission from the author, the following actions are explicitly prohibited:
+
+A. Commercial Use
+- No paid services, paid installations, commercial integrations, or monetized content
+- No direct or indirect profit generation, including ads, subscription services, or resale
+
+B. Removal or Alteration of Copyright Information
+- No removing or altering the original author attribution in the LICENSE file
+- No removing or hiding the original author name **asenyeroao-ct**
+- No misleading claims regarding ownership or authorship
+- When redistributing, the original LICENSE file must be retained or the original author must be clearly credited
+
+4. User Obligations
+When using, modifying, or redistributing this project, users must:
+
+1. **Clearly credit the original author**: The original author name **asenyeroao-ct** must be clearly indicated in all distributed versions
+2. **Retain copyright notices**: Do not hide or remove the original author attribution in the LICENSE file
+3. **Document modifications**: If code is modified, it is recommended to document the changes in README or code comments
+4. **Preserve original license**: When redistributing, the original LICENSE file must be retained or the original license terms must be clearly referenced
+
+5. Disclaimer of Warranty
+This project is provided “as is,” without warranty of any kind, express or implied.  
+The author is not liable for any damages, data loss, system failures, or legal issues arising from the use of this project.  
+Users assume all responsibility and risk.
+
+6. Rights Granted
+This license explicitly grants:
+- **Modification rights**: Permission to modify the source code
+- **Distribution rights**: Permission to redistribute modified or unmodified versions (original author must be credited)
+- **Merging rights**: Permission to merge with other projects (original author must be credited)
+
+This license does NOT provide:
+- Patent rights
+- Trademark rights
+- Commercial rights (requires separate authorization)
+- Sublicensing rights  
+
+7. Attribution Requirements
+When redistributing this project (modified or unmodified), you must:
+- Include the original LICENSE file, OR
+- Clearly state: "Based on Eventuri-MAKCU-LatencyScope by asenyeroao-ct" with a link to the original repository
+
+Failure to provide proper attribution constitutes a violation of this license.
+
+────────────────────────────────────────────
+End of License

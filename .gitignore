@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Project specific
+# config.json - now tracked in repository
+configs/*
+!configs/default.json
+*.log
+*.tmp
+*.bak
+
+# Compiled files
+*.pyd
+*.pyx
+*.c
+*.cpp
+
+# Archive files
+*.rar
+*.zip
+*.7z
+
+# Temporary files
+*.tmp
+*.temp
+viewer.kv
+tess.py
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
