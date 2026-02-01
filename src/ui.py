@@ -7,6 +7,7 @@ import tkinter as tk
 import os
 import json
 import cv2
+from PIL import Image
 
 from src.utils.config import config
 from src.capture.capture_service import CaptureService
@@ -97,7 +98,7 @@ class ViewerApp(ctk.CTk):
         self.after(100, self._update_debug_log)  # Debug 日誌更新
         
         # Check for updates after UI is ready (delay 2 seconds)
-        self.after(2000, self._check_for_updates)
+        self.after(2000, lambda: self._check_for_updates())
 
     def _build_layout(self):
         """構建佈局：無明顯邊界的側邊欄 + 內容區"""
@@ -124,6 +125,24 @@ class ViewerApp(ctk.CTk):
         # Title and version
         title_container = ctk.CTkFrame(self.title_bar, fg_color="transparent")
         title_container.pack(side="left", padx=20)
+        
+        # Logo icon
+        logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cvm.jpg")
+        self.logo_lbl = None
+        if os.path.exists(logo_path):
+            try:
+                logo_image = Image.open(logo_path)
+                # 調整圖標大小為 20x20
+                logo_image = logo_image.resize((20, 20), Image.Resampling.LANCZOS)
+                logo_ctk = ctk.CTkImage(light_image=logo_image, dark_image=logo_image, size=(20, 20))
+                self.logo_lbl = ctk.CTkLabel(
+                    title_container,
+                    image=logo_ctk,
+                    text=""
+                )
+                self.logo_lbl.pack(side="left", padx=(0, 10))
+            except Exception as e:
+                print(f"[UI] Failed to load logo: {e}")
         
         title_lbl = ctk.CTkLabel(
             title_container, 
@@ -166,6 +185,9 @@ class ViewerApp(ctk.CTk):
         self.title_bar.bind("<B1-Motion>", self.do_move)
         title_lbl.bind("<Button-1>", self.start_move)
         title_lbl.bind("<B1-Motion>", self.do_move)
+        if self.logo_lbl:
+            self.logo_lbl.bind("<Button-1>", self.start_move)
+            self.logo_lbl.bind("<B1-Motion>", self.do_move)
 
     def _build_sidebar(self):
         """側邊欄：純圖標或簡約文字"""
