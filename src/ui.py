@@ -1123,6 +1123,15 @@ class ViewerApp(ctk.CTk):
             self._add_slider_in_frame(sec_params, "Max Step", "ncaf_max_step", 1, 200,
                                       float(getattr(config, "ncaf_max_step", 50)),
                                       self._on_ncaf_max_step_changed)
+            self._add_slider_in_frame(sec_params, "Min Speed Multiplier", "ncaf_min_speed_multiplier", 0.01, 1.0,
+                                      float(getattr(config, "ncaf_min_speed_multiplier", 0.01)),
+                                      self._on_ncaf_min_speed_multiplier_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Max Speed Multiplier", "ncaf_max_speed_multiplier", 1.0, 20.0,
+                                      float(getattr(config, "ncaf_max_speed_multiplier", 10.0)),
+                                      self._on_ncaf_max_speed_multiplier_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Prediction Interval (ms)", "ncaf_prediction_interval", 1, 100,
+                                      float(getattr(config, "ncaf_prediction_interval", 0.016)) * 1000,
+                                      self._on_ncaf_prediction_interval_changed, is_float=True)
             self._add_spacer_in_frame(sec_params)
             self._add_subtitle_in_frame(sec_params, "FOV")
             self._add_slider_in_frame(sec_params, "Snap Radius (Outer)", "ncaf_snap_radius", 10, 500,
@@ -1152,6 +1161,9 @@ class ViewerApp(ctk.CTk):
             self._add_slider_in_frame(sec_params, "Max Delay (ms)", "wm_max_delay", 0.1, 50,
                                       float(getattr(config, "wm_max_delay", 0.003)) * 1000,
                                       self._on_wm_max_delay_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Distance Threshold", "wm_distance_threshold", 10, 200,
+                                      float(getattr(config, "wm_distance_threshold", 50)),
+                                      self._on_wm_distance_threshold_changed, is_float=True)
             self._add_spacer_in_frame(sec_params)
             self._add_subtitle_in_frame(sec_params, "FOV")
             self._add_slider_in_frame(sec_params, "FOV Size", "fovsize", 1, 1000,
@@ -1291,6 +1303,15 @@ class ViewerApp(ctk.CTk):
             self._add_slider_in_frame(sec_params, "Max Step", "ncaf_max_step_sec", 1, 200,
                                       float(getattr(config, "ncaf_max_step_sec", 50)),
                                       self._on_ncaf_max_step_sec_changed)
+            self._add_slider_in_frame(sec_params, "Min Speed Multiplier", "ncaf_min_speed_multiplier_sec", 0.01, 1.0,
+                                      float(getattr(config, "ncaf_min_speed_multiplier_sec", 0.01)),
+                                      self._on_ncaf_min_speed_multiplier_sec_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Max Speed Multiplier", "ncaf_max_speed_multiplier_sec", 1.0, 20.0,
+                                      float(getattr(config, "ncaf_max_speed_multiplier_sec", 10.0)),
+                                      self._on_ncaf_max_speed_multiplier_sec_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Prediction Interval (ms)", "ncaf_prediction_interval_sec", 1, 100,
+                                      float(getattr(config, "ncaf_prediction_interval_sec", 0.016)) * 1000,
+                                      self._on_ncaf_prediction_interval_sec_changed, is_float=True)
             self._add_spacer_in_frame(sec_params)
             self._add_subtitle_in_frame(sec_params, "FOV")
             self._add_slider_in_frame(sec_params, "Snap Radius (Outer)", "ncaf_snap_radius_sec", 10, 500,
@@ -1320,6 +1341,9 @@ class ViewerApp(ctk.CTk):
             self._add_slider_in_frame(sec_params, "Max Delay (ms)", "wm_max_delay_sec", 0.1, 50,
                                       float(getattr(config, "wm_max_delay_sec", 0.003)) * 1000,
                                       self._on_wm_max_delay_sec_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Distance Threshold", "wm_distance_threshold_sec", 10, 200,
+                                      float(getattr(config, "wm_distance_threshold_sec", 50)),
+                                      self._on_wm_distance_threshold_sec_changed, is_float=True)
             self._add_spacer_in_frame(sec_params)
             self._add_subtitle_in_frame(sec_params, "FOV")
             self._add_slider_in_frame(sec_params, "FOV Size", "fovsize_sec", 1, 1000,
@@ -3174,6 +3198,15 @@ class ViewerApp(ctk.CTk):
     def _on_ncaf_max_step_changed(self, val):
         config.ncaf_max_step = val
     
+    def _on_ncaf_min_speed_multiplier_changed(self, val):
+        config.ncaf_min_speed_multiplier = val
+    
+    def _on_ncaf_max_speed_multiplier_changed(self, val):
+        config.ncaf_max_speed_multiplier = val
+    
+    def _on_ncaf_prediction_interval_changed(self, val):
+        config.ncaf_prediction_interval = val / 1000.0  # ms → s
+    
     # === NCAF Callbacks (Sec) ===
     def _on_ncaf_near_radius_sec_changed(self, val):
         config.ncaf_near_radius_sec = val
@@ -3200,6 +3233,15 @@ class ViewerApp(ctk.CTk):
     def _on_ncaf_max_step_sec_changed(self, val):
         config.ncaf_max_step_sec = val
     
+    def _on_ncaf_min_speed_multiplier_sec_changed(self, val):
+        config.ncaf_min_speed_multiplier_sec = val
+    
+    def _on_ncaf_max_speed_multiplier_sec_changed(self, val):
+        config.ncaf_max_speed_multiplier_sec = val
+    
+    def _on_ncaf_prediction_interval_sec_changed(self, val):
+        config.ncaf_prediction_interval_sec = val / 1000.0  # ms → s
+    
     # === WindMouse Callbacks (Main) ===
     def _on_wm_gravity_changed(self, val):
         config.wm_gravity = val
@@ -3219,6 +3261,9 @@ class ViewerApp(ctk.CTk):
     def _on_wm_max_delay_changed(self, val):
         config.wm_max_delay = val / 1000.0  # ms → s
     
+    def _on_wm_distance_threshold_changed(self, val):
+        config.wm_distance_threshold = val
+    
     # === WindMouse Callbacks (Sec) ===
     def _on_wm_gravity_sec_changed(self, val):
         config.wm_gravity_sec = val
@@ -3237,6 +3282,9 @@ class ViewerApp(ctk.CTk):
     
     def _on_wm_max_delay_sec_changed(self, val):
         config.wm_max_delay_sec = val / 1000.0  # ms → s
+    
+    def _on_wm_distance_threshold_sec_changed(self, val):
+        config.wm_distance_threshold_sec = val
     
     # --- Bezier Callbacks (Main) ---
     def _on_bezier_segments_changed(self, val):
