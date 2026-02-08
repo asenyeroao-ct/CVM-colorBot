@@ -346,25 +346,55 @@ def unlock_all_locks():
     for i in range(5):
         unlock_button_idx(i)
 
-def lock_movement_x(lock: bool = True):
-    """鎖定或解鎖 X 軸物理鼠標移動"""
+def lock_movement_x(lock: bool = True, skip_lock: bool = False):
+    """鎖定或解鎖 X 軸物理鼠標移動
+    
+    Args:
+        lock: 是否鎖定
+        skip_lock: 如果為 True，跳過獲取鎖（用於已經持有鎖的情況）
+    """
     global _movement_lock_state
     if not is_connected:
         return
-    with _movement_lock_state["lock"]:
-        if _movement_lock_state["lock_x"] != lock:
-            _send_cmd_no_wait(f"lock_mx({1 if lock else 0})")
-            _movement_lock_state["lock_x"] = lock
+    
+    try:
+        if skip_lock:
+            # 已經持有鎖，直接執行
+            if _movement_lock_state["lock_x"] != lock:
+                _send_cmd_no_wait(f"lock_mx({1 if lock else 0})")
+                _movement_lock_state["lock_x"] = lock
+        else:
+            with _movement_lock_state["lock"]:
+                if _movement_lock_state["lock_x"] != lock:
+                    _send_cmd_no_wait(f"lock_mx({1 if lock else 0})")
+                    _movement_lock_state["lock_x"] = lock
+    except Exception as e:
+        print(f"[Mouse Lock] Error in lock_movement_x: {e}")
 
-def lock_movement_y(lock: bool = True):
-    """鎖定或解鎖 Y 軸物理鼠標移動"""
+def lock_movement_y(lock: bool = True, skip_lock: bool = False):
+    """鎖定或解鎖 Y 軸物理鼠標移動
+    
+    Args:
+        lock: 是否鎖定
+        skip_lock: 如果為 True，跳過獲取鎖（用於已經持有鎖的情況）
+    """
     global _movement_lock_state
     if not is_connected:
         return
-    with _movement_lock_state["lock"]:
-        if _movement_lock_state["lock_y"] != lock:
-            _send_cmd_no_wait(f"lock_my({1 if lock else 0})")
-            _movement_lock_state["lock_y"] = lock
+    
+    try:
+        if skip_lock:
+            # 已經持有鎖，直接執行
+            if _movement_lock_state["lock_y"] != lock:
+                _send_cmd_no_wait(f"lock_my({1 if lock else 0})")
+                _movement_lock_state["lock_y"] = lock
+        else:
+            with _movement_lock_state["lock"]:
+                if _movement_lock_state["lock_y"] != lock:
+                    _send_cmd_no_wait(f"lock_my({1 if lock else 0})")
+                    _movement_lock_state["lock_y"] = lock
+    except Exception as e:
+        print(f"[Mouse Lock] Error in lock_movement_y: {e}")
 
 def update_movement_lock(lock_x: bool, lock_y: bool, is_main: bool = True):
     """
@@ -381,17 +411,31 @@ def update_movement_lock(lock_x: bool, lock_y: bool, is_main: bool = True):
     if not is_connected:
         return
     
-    current_time = time.time()
-    
-    with _movement_lock_state["lock"]:
-        if is_main:
-            _movement_lock_state["main_aimbot_locked"] = lock_x or lock_y
-            if lock_x or lock_y:
-                _movement_lock_state["last_main_move_time"] = current_time
-        else:
-            _movement_lock_state["sec_aimbot_locked"] = lock_x or lock_y
-            if lock_x or lock_y:
-                _movement_lock_state["last_sec_move_time"] = current_time
+    try:
+        current_time = time.time()
+        
+        # 使用超時鎖定，避免死鎖
+        lock_acquired = False
+        try:
+            lock_acquired = _movement_lock_state["lock"].acquire(timeout=0.01)
+            if not lock_acquired:
+                # 無法獲取鎖，跳過本次更新
+                return
+            
+            if is_main:
+                _movement_lock_state["main_aimbot_locked"] = lock_x or lock_y
+                if lock_x or lock_y:
+                    _movement_lock_state["last_main_move_time"] = current_time
+            else:
+                _movement_lock_state["sec_aimbot_locked"] = lock_x or lock_y
+                if lock_x or lock_y:
+                    _movement_lock_state["last_sec_move_time"] = current_time
+        finally:
+            if lock_acquired:
+                _movement_lock_state["lock"].release()
+    except Exception as e:
+        # 捕獲所有異常，避免崩潰
+        print(f"[Mouse Lock] Error in update_movement_lock: {e}")
 
 def tick_movement_lock_manager():
     """
@@ -404,48 +448,68 @@ def tick_movement_lock_manager():
     if not is_connected:
         return
     
-    current_time = time.time()
-    
-    with _movement_lock_state["lock"]:
-        # 檢查 Main Aimbot 鎖定超時
-        if _movement_lock_state["main_aimbot_locked"]:
-            if current_time - _movement_lock_state["last_main_move_time"] > _MOVEMENT_LOCK_TIMEOUT:
-                _movement_lock_state["main_aimbot_locked"] = False
+    try:
+        current_time = time.time()
         
-        # 檢查 Sec Aimbot 鎖定超時
-        if _movement_lock_state["sec_aimbot_locked"]:
-            if current_time - _movement_lock_state["last_sec_move_time"] > _MOVEMENT_LOCK_TIMEOUT:
-                _movement_lock_state["sec_aimbot_locked"] = False
-        
-        # 檢查是否需要解鎖
-        # 從 config 讀取設置
+        # 使用超時鎖定，避免死鎖
+        lock_acquired = False
         try:
-            from src.utils.config import config
-            main_lock_x = getattr(config, "mouse_lock_main_x", False)
-            main_lock_y = getattr(config, "mouse_lock_main_y", False)
-            sec_lock_x = getattr(config, "mouse_lock_sec_x", False)
-            sec_lock_y = getattr(config, "mouse_lock_sec_y", False)
-        except:
-            main_lock_x = False
-            main_lock_y = False
-            sec_lock_x = False
-            sec_lock_y = False
-        
-        # 計算最終鎖定狀態（main 或 sec 任一鎖定即鎖定）
-        should_lock_x = (
-            (main_lock_x and _movement_lock_state["main_aimbot_locked"]) or
-            (sec_lock_x and _movement_lock_state["sec_aimbot_locked"])
-        )
-        should_lock_y = (
-            (main_lock_y and _movement_lock_state["main_aimbot_locked"]) or
-            (sec_lock_y and _movement_lock_state["sec_aimbot_locked"])
-        )
-        
-        # 更新實際鎖定狀態
-        if _movement_lock_state["lock_x"] != should_lock_x:
-            lock_movement_x(should_lock_x)
-        if _movement_lock_state["lock_y"] != should_lock_y:
-            lock_movement_y(should_lock_y)
+            lock_acquired = _movement_lock_state["lock"].acquire(timeout=0.01)
+            if not lock_acquired:
+                # 無法獲取鎖，跳過本次 tick
+                return
+            
+            # 檢查 Main Aimbot 鎖定超時
+            if _movement_lock_state["main_aimbot_locked"]:
+                if current_time - _movement_lock_state["last_main_move_time"] > _MOVEMENT_LOCK_TIMEOUT:
+                    _movement_lock_state["main_aimbot_locked"] = False
+            
+            # 檢查 Sec Aimbot 鎖定超時
+            if _movement_lock_state["sec_aimbot_locked"]:
+                if current_time - _movement_lock_state["last_sec_move_time"] > _MOVEMENT_LOCK_TIMEOUT:
+                    _movement_lock_state["sec_aimbot_locked"] = False
+            
+            # 檢查是否需要解鎖
+            # 從 config 讀取設置
+            try:
+                from src.utils.config import config
+                main_lock_x = getattr(config, "mouse_lock_main_x", False)
+                main_lock_y = getattr(config, "mouse_lock_main_y", False)
+                sec_lock_x = getattr(config, "mouse_lock_sec_x", False)
+                sec_lock_y = getattr(config, "mouse_lock_sec_y", False)
+            except Exception as e:
+                # 配置讀取失敗，使用默認值
+                main_lock_x = False
+                main_lock_y = False
+                sec_lock_x = False
+                sec_lock_y = False
+            
+            # 計算最終鎖定狀態（main 或 sec 任一鎖定即鎖定）
+            should_lock_x = (
+                (main_lock_x and _movement_lock_state["main_aimbot_locked"]) or
+                (sec_lock_x and _movement_lock_state["sec_aimbot_locked"])
+            )
+            should_lock_y = (
+                (main_lock_y and _movement_lock_state["main_aimbot_locked"]) or
+                (sec_lock_y and _movement_lock_state["sec_aimbot_locked"])
+            )
+            
+            # 更新實際鎖定狀態（已經持有鎖，使用 skip_lock=True）
+            try:
+                if _movement_lock_state["lock_x"] != should_lock_x:
+                    lock_movement_x(should_lock_x, skip_lock=True)
+                if _movement_lock_state["lock_y"] != should_lock_y:
+                    lock_movement_y(should_lock_y, skip_lock=True)
+            except Exception as e:
+                print(f"[Mouse Lock] Error updating lock state: {e}")
+        finally:
+            if lock_acquired:
+                _movement_lock_state["lock"].release()
+    except Exception as e:
+        # 捕獲所有異常，避免崩潰
+        print(f"[Mouse Lock] Error in tick_movement_lock_manager: {e}")
+        import traceback
+        traceback.print_exc()
 
 def mask_manager_tick(selected_idx: int, aimbot_running: bool):
     """Manage button locks based on selected_idx and aimbot_running state."""

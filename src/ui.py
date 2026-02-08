@@ -3613,31 +3613,35 @@ class ViewerApp(ctk.CTk):
     
     def _on_mouse_lock_main_x_changed(self):
         """Mouse Lock Main Aimbot X-Axis 開關回調"""
-        config.mouse_lock_main_x = self.var_mouse_lock_main_x.get()
-        # 立即更新鎖定狀態
-        from src.utils.mouse import tick_movement_lock_manager
-        tick_movement_lock_manager()
+        try:
+            config.mouse_lock_main_x = self.var_mouse_lock_main_x.get()
+            # 不在此處調用 tick，讓主循環處理，避免阻塞 UI 線程
+        except Exception as e:
+            print(f"[Mouse Lock] Error in main_x callback: {e}")
     
     def _on_mouse_lock_main_y_changed(self):
         """Mouse Lock Main Aimbot Y-Axis 開關回調"""
-        config.mouse_lock_main_y = self.var_mouse_lock_main_y.get()
-        # 立即更新鎖定狀態
-        from src.utils.mouse import tick_movement_lock_manager
-        tick_movement_lock_manager()
+        try:
+            config.mouse_lock_main_y = self.var_mouse_lock_main_y.get()
+            # 不在此處調用 tick，讓主循環處理，避免阻塞 UI 線程
+        except Exception as e:
+            print(f"[Mouse Lock] Error in main_y callback: {e}")
     
     def _on_mouse_lock_sec_x_changed(self):
         """Mouse Lock Sec Aimbot X-Axis 開關回調"""
-        config.mouse_lock_sec_x = self.var_mouse_lock_sec_x.get()
-        # 立即更新鎖定狀態
-        from src.utils.mouse import tick_movement_lock_manager
-        tick_movement_lock_manager()
+        try:
+            config.mouse_lock_sec_x = self.var_mouse_lock_sec_x.get()
+            # 不在此處調用 tick，讓主循環處理，避免阻塞 UI 線程
+        except Exception as e:
+            print(f"[Mouse Lock] Error in sec_x callback: {e}")
     
     def _on_mouse_lock_sec_y_changed(self):
         """Mouse Lock Sec Aimbot Y-Axis 開關回調"""
-        config.mouse_lock_sec_y = self.var_mouse_lock_sec_y.get()
-        # 立即更新鎖定狀態
-        from src.utils.mouse import tick_movement_lock_manager
-        tick_movement_lock_manager()
+        try:
+            config.mouse_lock_sec_y = self.var_mouse_lock_sec_y.get()
+            # 不在此處調用 tick，讓主循環處理，避免阻塞 UI 線程
+        except Exception as e:
+            print(f"[Mouse Lock] Error in sec_y callback: {e}")
     
     def _check_for_updates(self):
         """Check for updates in background"""
