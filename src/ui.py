@@ -1169,7 +1169,7 @@ class ViewerApp(ctk.CTk):
             self._add_slider_in_frame(sec_params, "Ctrl Y", "bezier_ctrl_y", 0.0, 100.0,
                                       float(getattr(config, "bezier_ctrl_y", 16.0)),
                                       self._on_bezier_ctrl_y_changed, is_float=True)
-            self._add_slider_in_frame(sec_params, "Speed", "bezier_speed", 0.1, 10.0,
+            self._add_slider_in_frame(sec_params, "Speed", "bezier_speed", 0.1, 20.0,
                                       float(getattr(config, "bezier_speed", 1.0)),
                                       self._on_bezier_speed_changed, is_float=True)
             self._add_slider_in_frame(sec_params, "Delay (ms)", "bezier_delay", 0.1, 50.0,
@@ -1337,7 +1337,7 @@ class ViewerApp(ctk.CTk):
             self._add_slider_in_frame(sec_params, "Ctrl Y", "bezier_ctrl_y_sec", 0.0, 100.0,
                                       float(getattr(config, "bezier_ctrl_y_sec", 16.0)),
                                       self._on_bezier_ctrl_y_sec_changed, is_float=True)
-            self._add_slider_in_frame(sec_params, "Speed", "bezier_speed_sec", 0.1, 10.0,
+            self._add_slider_in_frame(sec_params, "Speed", "bezier_speed_sec", 0.1, 20.0,
                                       float(getattr(config, "bezier_speed_sec", 1.0)),
                                       self._on_bezier_speed_sec_changed, is_float=True)
             self._add_slider_in_frame(sec_params, "Delay (ms)", "bezier_delay_sec", 0.1, 50.0,
