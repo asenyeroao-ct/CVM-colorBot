@@ -3,6 +3,7 @@ MSS 螢幕擷取模組
 使用 mss 進行高效螢幕擷取，基於螢幕中心點和可調 FOV 範圍
 """
 
+from src.utils.debug_logger import log_print
 import numpy as np
 import threading
 import time
@@ -13,7 +14,7 @@ try:
     HAS_MSS = True
 except ImportError:
     HAS_MSS = False
-    print("[MSS] mss module not installed. Run: pip install mss")
+    log_print("[MSS] mss module not installed. Run: pip install mss")
 
 
 class MSSCapture:
@@ -151,7 +152,7 @@ class MSSCapture:
                     result.append(f"Monitor {i}: {mon['width']}x{mon['height']}")
                 return result
         except Exception as e:
-            print(f"[MSS] Failed to get monitor list: {e}")
+            log_print(f"[MSS] Failed to get monitor list: {e}")
             return []
     
     def get_frame(self):
@@ -206,7 +207,7 @@ class MSSCapture:
             return bgr
             
         except Exception as e:
-            print(f"[MSS] get_frame error: {e}")
+            log_print(f"[MSS] get_frame error: {e}")
             return None
     
     def get_performance_stats(self):

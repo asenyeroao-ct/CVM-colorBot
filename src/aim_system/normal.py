@@ -10,7 +10,7 @@ import time
 
 from src.utils.config import config
 from src.utils.mouse import is_button_pressed
-from src.utils.debug_logger import log_move
+from src.utils.debug_logger import log_move, log_print
 from src.utils.activation import check_aimbot_activation
 from .Triggerbot import process_triggerbot
 from .RCS import process_rcs, check_y_release
@@ -579,7 +579,7 @@ def process_normal_mode(targets, frame, img, tracker):
                     _dispatch_aimbot(dx, dy, distance_to_center, mode_main, tracker, is_sec=False)
                     main_aimbot_active = True
                 except Exception as e:
-                    print(f"[Main Aimbot error] {e}")
+                    log_print(f"[Main Aimbot error] {e}")
         
         # === 如果 Main Aimbot 未啟動，嘗試 Sec Aimbot ===
         if not main_aimbot_active:
@@ -612,7 +612,7 @@ def process_normal_mode(targets, frame, img, tracker):
                         # 根據 Sec 模式調度
                         _dispatch_aimbot(dx, dy, distance_to_center, mode_sec, tracker, is_sec=True)
                     except Exception as e:
-                        print(f"[Sec Aimbot error] {e}")
+                        log_print(f"[Sec Aimbot error] {e}")
     
     # 處理 Triggerbot（無論是否有目標都會執行）
     try:
@@ -625,4 +625,4 @@ def process_normal_mode(targets, frame, img, tracker):
             tracker.tbburst_interval_min, tracker.tbburst_interval_max
         )
     except Exception as e:
-        print("[Triggerbot error]", e)
+        log_print("[Triggerbot error]", e)

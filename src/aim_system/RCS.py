@@ -2,6 +2,7 @@
 RCS (Recoil Control System) 模組
 處理後座力補償邏輯
 """
+from src.utils.debug_logger import log_print
 import time
 import threading
 from src.utils.config import config
@@ -50,7 +51,7 @@ def _rcs_pull_loop(controller, pull_speed):
         try:
             controller.move(0, move_amount)
         except Exception as e:
-            print(f"[RCS] Move error: {e}")
+            log_print(f"[RCS] Move error: {e}")
             break
         
         # 控制循環頻率（約 80 FPS）

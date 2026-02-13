@@ -3,6 +3,7 @@ CaptureCard 模組
 包含所有與 Capture Card 相關的邏輯代碼，可獨立調用
 """
 
+from src.utils.debug_logger import log_print
 import cv2
 import numpy as np
 from typing import Tuple, Optional, List
@@ -66,10 +67,10 @@ class CaptureCardCamera:
                         # 驗證格式是否設置成功
                         actual_fourcc = int(self.cap.get(cv2.CAP_PROP_FOURCC))
                         if actual_fourcc != fourcc_code:
-                            print(f"[CaptureCard] Format {fourcc} not accepted, got {actual_fourcc}")
+                            log_print(f"[CaptureCard] Format {fourcc} not accepted, got {actual_fourcc}")
                             continue
                         
-                        print(f"[CaptureCard] Set fourcc to {fourcc}")
+                        log_print(f"[CaptureCard] Set fourcc to {fourcc}")
                         
                         # 3. 在格式確定後，再設置 FPS（關鍵！）
                         self.cap.set(cv2.CAP_PROP_FPS, float(self.target_fps))
@@ -79,38 +80,38 @@ class CaptureCardCamera:
                         fps_diff = abs(actual_fps - self.target_fps)
                         
                         if fps_diff > 1.0:  # 允許 1 FPS 誤差
-                            print(f"[CaptureCard] Format {fourcc}: Requested {self.target_fps} FPS, but got {actual_fps} FPS")
+                            log_print(f"[CaptureCard] Format {fourcc}: Requested {self.target_fps} FPS, but got {actual_fps} FPS")
                             # 如果 FPS 差距太大（例如只有 60），嘗試下一個格式
                             if actual_fps < self.target_fps * 0.5:
-                                print(f"[CaptureCard] Format {fourcc} doesn't support {self.target_fps} FPS, trying next format...")
+                                log_print(f"[CaptureCard] Format {fourcc} doesn't support {self.target_fps} FPS, trying next format...")
                                 continue  # 嘗試下一個格式
                             else:
                                 # FPS 接近目標，接受這個配置
-                                print(f"[CaptureCard] FPS close enough: {actual_fps} FPS (target: {self.target_fps})")
+                                log_print(f"[CaptureCard] FPS close enough: {actual_fps} FPS (target: {self.target_fps})")
                                 config_success = True
                                 break
                         else:
-                            print(f"[CaptureCard] FPS set successfully: {actual_fps} FPS (target: {self.target_fps})")
+                            log_print(f"[CaptureCard] FPS set successfully: {actual_fps} FPS (target: {self.target_fps})")
                             config_success = True
                             break
                             
                     except Exception as e:
-                        print(f"[CaptureCard] Failed to set fourcc {fourcc}: {e}")
+                        log_print(f"[CaptureCard] Failed to set fourcc {fourcc}: {e}")
                         continue
                 
                 if not config_success:
-                    print(f"[CaptureCard] Warning: Could not find a format that supports {self.target_fps} FPS")
+                    log_print(f"[CaptureCard] Warning: Could not find a format that supports {self.target_fps} FPS")
                     # 繼續使用當前配置，即使 FPS 不達標
                     actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
-                    print(f"[CaptureCard] Using available FPS: {actual_fps}")
+                    log_print(f"[CaptureCard] Using available FPS: {actual_fps}")
                 
                 # 5. 設置最小緩衝區以降低延遲
                 try:
                     self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     buffer_size = self.cap.get(cv2.CAP_PROP_BUFFERSIZE)
-                    print(f"[CaptureCard] Buffer size set to: {buffer_size}")
+                    log_print(f"[CaptureCard] Buffer size set to: {buffer_size}")
                 except Exception as e:
-                    print(f"[CaptureCard] Failed to set buffer size: {e}")
+                    log_print(f"[CaptureCard] Failed to set buffer size: {e}")
                 
                 # 6. 嘗試啟用硬體加速（如果支援）
                 self._try_enable_hardware_acceleration()
@@ -126,8 +127,8 @@ class CaptureCardCamera:
                         pass  # 某些設備可能不支援這些屬性
                 
                 actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
-                print(f"[CaptureCard] Successfully opened camera {self.device_index} with backend {backend}")
-                print(f"[CaptureCard] Resolution: {self.frame_width}x{self.frame_height}, FPS: {actual_fps}")
+                log_print(f"[CaptureCard] Successfully opened camera {self.device_index} with backend {backend}")
+                log_print(f"[CaptureCard] Resolution: {self.frame_width}x{self.frame_height}, FPS: {actual_fps}")
                 break
             else:
                 if self.cap:
@@ -157,7 +158,7 @@ class CaptureCardCamera:
                         self.cap.set(cv2.CAP_PROP_HW_ACCELERATION, 1)  # 1 = 啟用
                         hw_accel = self.cap.get(cv2.CAP_PROP_HW_ACCELERATION)
                         if hw_accel > 0:
-                            print(f"[CaptureCard] Hardware acceleration enabled: {hw_accel}")
+                            log_print(f"[CaptureCard] Hardware acceleration enabled: {hw_accel}")
                 except Exception as e:
                     pass  # 某些版本可能不支援
                     
@@ -170,7 +171,7 @@ class CaptureCardCamera:
                 except Exception as e:
                     pass
         except Exception as e:
-            print(f"[CaptureCard] Hardware acceleration check failed: {e}")
+            log_print(f"[CaptureCard] Hardware acceleration check failed: {e}")
 
     def get_latest_frame(self):
         """
@@ -412,7 +413,7 @@ def apply_capture_card_config(config, **kwargs):
         if key in valid_keys:
             setattr(config, key, value)
         else:
-            print(f"[Warning] Unknown capture card config key: {key}")
+            log_print(f"[Warning] Unknown capture card config key: {key}")
 
 
 # 使用示例（僅供參考，不會被執行）

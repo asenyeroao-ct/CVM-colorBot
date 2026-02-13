@@ -1,3 +1,4 @@
+from src.utils.debug_logger import log_print
 import re
 import socket
 import threading
@@ -108,10 +109,10 @@ class DHZClient:
 
 def _start_listener_thread():
     if state.listener_thread is None or not state.listener_thread.is_alive():
-        print("[INFO] Starting DHZ listener thread...")
+        log_print("[INFO] Starting DHZ listener thread...")
         state.listener_thread = threading.Thread(target=_listener_loop, daemon=True)
         state.listener_thread.start()
-        print("[INFO] DHZ listener thread started.")
+        log_print("[INFO] DHZ listener thread started.")
 
 
 def _listener_loop():
@@ -150,40 +151,40 @@ def connect(ip: str, port: str, random_shift=0):
         selected_port = int(str(port).strip())
     except Exception:
         state.last_connect_error = f"Invalid DHZ port: {port!r}"
-        print(f"[ERROR] {state.last_connect_error}")
+        log_print(f"[ERROR] {state.last_connect_error}")
         return False
 
     try:
         selected_shift = int(str(random_shift).strip())
     except Exception:
         state.last_connect_error = f"Invalid DHZ random shift: {random_shift!r}"
-        print(f"[ERROR] {state.last_connect_error}")
+        log_print(f"[ERROR] {state.last_connect_error}")
         return False
 
     selected_ip = str(ip).strip()
     if not selected_ip:
         state.last_connect_error = "Invalid DHZ IP: empty"
-        print(f"[ERROR] {state.last_connect_error}")
+        log_print(f"[ERROR] {state.last_connect_error}")
         return False
 
     try:
         client = DHZClient(selected_ip, selected_port, selected_shift)
     except Exception as e:
         state.last_connect_error = f"DHZ socket init failed: {e}"
-        print(f"[ERROR] {state.last_connect_error}")
+        log_print(f"[ERROR] {state.last_connect_error}")
         return False
 
     ok, _, err = client.query_bool("isdown_left()", timeout=0.1, retries=0)
     if not ok:
         client.close()
         state.last_connect_error = f"DHZ probe failed: {err}"
-        print(f"[ERROR] {state.last_connect_error}")
+        log_print(f"[ERROR] {state.last_connect_error}")
         return False
 
     state.dhz_client = client
     state.set_connected(True, "DHZ")
     _start_listener_thread()
-    print(f"[INFO] Connected to DHZ at {selected_ip}:{selected_port} (RANDOM={selected_shift}).")
+    log_print(f"[INFO] Connected to DHZ at {selected_ip}:{selected_port} (RANDOM={selected_shift}).")
     return True
 
 
@@ -214,7 +215,7 @@ def _send_no_wait(command: str):
         return
     ok, err = state.dhz_client.send(command, expect_response=False, timeout=0.02, retries=0)
     if not ok:
-        print(f"[Mouse-DHZ] command failed: {command} ({err})")
+        log_print(f"[Mouse-DHZ] command failed: {command} ({err})")
 
 
 def move(x: float, y: float):

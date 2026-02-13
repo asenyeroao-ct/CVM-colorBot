@@ -15,7 +15,7 @@ from functools import partial
 from src.utils.config import config
 from src.capture.capture_service import CaptureService
 from src.utils.mouse_input import MouseInputMonitor
-from src.utils.debug_logger import get_recent_logs, clear_logs, get_log_count
+from src.utils.debug_logger import get_recent_logs, clear_logs, get_log_count, log_print
 from src.utils.updater import get_update_checker
 
 # --- 風格配置 (Ultra Minimalist) ---
@@ -160,7 +160,7 @@ class ViewerApp(ctk.CTk):
                 )
                 self.logo_lbl.pack(side="left", padx=(0, 10))
             except Exception as e:
-                print(f"[UI] Failed to load logo: {e}")
+                log_print(f"[UI] Failed to load logo: {e}")
         
         title_lbl = ctk.CTkLabel(
             title_container, 
@@ -3144,9 +3144,9 @@ class ViewerApp(ctk.CTk):
             # 這會確保所有 slider、checkbox、option menu 都顯示正確的值
             self._handle_nav_click("General", self._show_general_tab)
             
-            print("[UI] Configuration loaded")
+            log_print("[UI] Configuration loaded")
         except Exception as e:
-            print(f"[UI] Init load error: {e}")
+            log_print(f"[UI] Init load error: {e}")
     
     def _sync_config_to_tracker(self):
         """將 config 中的值同步到 tracker"""
@@ -3198,7 +3198,7 @@ class ViewerApp(ctk.CTk):
             self.tracker.selected_mouse_button_sec = config.selected_mouse_button_sec
             
         except Exception as e:
-            print(f"[UI] Sync error: {e}")
+            log_print(f"[UI] Sync error: {e}")
 
     def _apply_settings(self, data, config_name=None):
         try:
@@ -3260,7 +3260,7 @@ class ViewerApp(ctk.CTk):
             except:
                 pass
         except Exception as e:
-            print(f"[UI] Apply error: {e}")
+            log_print(f"[UI] Apply error: {e}")
             try:
                 self._log_config(f"Apply error: {e}")
             except:
@@ -3398,7 +3398,7 @@ class ViewerApp(ctk.CTk):
         width, height = self.capture.get_frame_dimensions()
         if width and height:
             self._update_ndi_fov_slider_max(width, height)
-            print(f"[UI] NDI frame dimensions: {width}x{height}, updated FOV slider max values")
+            log_print(f"[UI] NDI frame dimensions: {width}x{height}, updated FOV slider max values")
             if hasattr(self, '_ndi_retry_count'):
                 self._ndi_retry_count = 0
         else:
@@ -3429,14 +3429,14 @@ class ViewerApp(ctk.CTk):
                 self.after(500, self._update_udp_fov_sliders_after_connect)  # 延遲一點以確保畫面已準備好
             else:
                 self._set_status_indicator(f"Status: UDP connect failed: {error}", COLOR_DANGER)
-                print(f"[UI] UDP connection failed: {error}")
+                log_print(f"[UI] UDP connection failed: {error}")
     
     def _update_udp_fov_sliders_after_connect(self):
         """連接成功後更新 UDP FOV 滑條的最大值"""
         width, height = self.capture.get_frame_dimensions()
         if width and height:
             self._update_udp_fov_slider_max(width, height)
-            print(f"[UI] UDP frame dimensions: {width}x{height}, updated FOV slider max values")
+            log_print(f"[UI] UDP frame dimensions: {width}x{height}, updated FOV slider max values")
         else:
             # 如果第一次獲取失敗，再試一次（最多試3次）
             if not hasattr(self, '_udp_retry_count'):
@@ -3484,7 +3484,7 @@ class ViewerApp(ctk.CTk):
                 self._set_status_indicator("Status: CaptureCard connected", COLOR_TEXT)
             else:
                 self._set_status_indicator(f"Status: CaptureCard connect failed: {error}", COLOR_DANGER)
-                print(f"[UI] CaptureCard connection failed: {error}")
+                log_print(f"[UI] CaptureCard connection failed: {error}")
 
     # --- MSS Callbacks ---
     def _on_mss_monitor_changed(self, event=None):
@@ -3584,7 +3584,7 @@ class ViewerApp(ctk.CTk):
                 self._set_status_indicator(f"Status: MSS connected (Monitor {monitor_index})", COLOR_TEXT)
             else:
                 self._set_status_indicator(f"Status: MSS connect failed: {error}", COLOR_DANGER)
-                print(f"[UI] MSS connection failed: {error}")
+                log_print(f"[UI] MSS connection failed: {error}")
     
     # --- NDI FOV Callbacks ---
     def _on_ndi_fov_enabled_changed(self):
@@ -3883,7 +3883,7 @@ class ViewerApp(ctk.CTk):
                 self.decode_delay_label.configure(text="Decode: -- ms")
                 self.total_delay_label.configure(text="Delay: -- ms")
         except Exception as e:
-            print(f"[UI] Performance stats update error: {e}")
+            log_print(f"[UI] Performance stats update error: {e}")
         
         # 每 500ms 更新一次
         self.after(500, self._update_performance_stats)
@@ -3934,25 +3934,25 @@ class ViewerApp(ctk.CTk):
             config.selected_mouse_button_sec = self.tracker.selected_mouse_button_sec
             
         except Exception as e:
-            print(f"[UI] Sync before save error: {e}")
+            log_print(f"[UI] Sync before save error: {e}")
         
         # 保存當前配置
         try:
             config.save_to_file()
         except Exception as e:
-            print(f"[UI] Failed to auto-save configuration: {e}")
+            log_print(f"[UI] Failed to auto-save configuration: {e}")
         
         # 停止追蹤器
         try: 
             self.tracker.stop()
         except Exception as e:
-            print(f"[UI] Tracker stop error: {e}")
+            log_print(f"[UI] Tracker stop error: {e}")
         
         # 清理捕獲服務
         try: 
             self.capture.cleanup()
         except Exception as e:
-            print(f"[UI] Capture cleanup error: {e}")
+            log_print(f"[UI] Capture cleanup error: {e}")
         
         # 銷毀窗口
         self.destroy()
@@ -3961,7 +3961,7 @@ class ViewerApp(ctk.CTk):
         try: 
             cv2.destroyAllWindows()
         except Exception as e:
-            print(f"[UI] CV2 cleanup error: {e}")
+            log_print(f"[UI] CV2 cleanup error: {e}")
 
     # Callbacks proxies
     def _on_normal_x_speed_changed(self, val): 
@@ -4127,17 +4127,17 @@ class ViewerApp(ctk.CTk):
             from src.utils.detection import reload_model
             if hasattr(self, 'tracker'):
                 self.tracker.model, self.tracker.class_names = reload_model()
-                print(f"[UI] Custom HSV updated: {key} = {int(val)}")
+                log_print(f"[UI] Custom HSV updated: {key} = {int(val)}")
     
     def _on_detection_merge_distance_changed(self, val):
         """Detection Merge Distance 改變時的回調"""
         config.detection_merge_distance = int(val)
-        print(f"[UI] Detection merge distance updated: {int(val)}")
+        log_print(f"[UI] Detection merge distance updated: {int(val)}")
     
     def _on_detection_min_contour_points_changed(self, val):
         """Detection Min Contour Points 改變時的回調"""
         config.detection_min_contour_points = int(val)
-        print(f"[UI] Detection min contour points updated: {int(val)}")
+        log_print(f"[UI] Detection min contour points updated: {int(val)}")
     
     def _on_mode_selected(self, val): 
         config.mode = val
@@ -4474,7 +4474,11 @@ class ViewerApp(ctk.CTk):
                             dy = log.get("dy", 0)
                             log_text += f"[{timestamp}] {log_type:8s} [{source:15s}] dx={dx:8.2f}, dy={dy:8.2f}\n"
                         else:
-                            log_text += f"[{timestamp}] {log_type:8s} [{source:15s}]\n"
+                            message = str(log.get("message", ""))
+                            if message:
+                                log_text += f"[{timestamp}] {log_type:8s} [{source:15s}] {message}\n"
+                            else:
+                                log_text += f"[{timestamp}] {log_type:8s} [{source:15s}]\n"
                     
                     # Update text box (only when content changes to avoid frequent refresh)
                     try:
@@ -4550,7 +4554,7 @@ class ViewerApp(ctk.CTk):
             config.mouse_lock_main_x = self.var_mouse_lock_main_x.get()
             # 不在此處調用 tick，讓主循環處理，避免阻塞 UI 線程
         except Exception as e:
-            print(f"[Mouse Lock] Error in main_x callback: {e}")
+            log_print(f"[Mouse Lock] Error in main_x callback: {e}")
     
     def _on_mouse_lock_main_y_changed(self):
         """Mouse Lock Main Aimbot Y-Axis 開關回調"""
@@ -4558,7 +4562,7 @@ class ViewerApp(ctk.CTk):
             config.mouse_lock_main_y = self.var_mouse_lock_main_y.get()
             # 不在此處調用 tick，讓主循環處理，避免阻塞 UI 線程
         except Exception as e:
-            print(f"[Mouse Lock] Error in main_y callback: {e}")
+            log_print(f"[Mouse Lock] Error in main_y callback: {e}")
     
     def _on_mouse_lock_sec_x_changed(self):
         """Mouse Lock Sec Aimbot X-Axis 開關回調"""
@@ -4566,7 +4570,7 @@ class ViewerApp(ctk.CTk):
             config.mouse_lock_sec_x = self.var_mouse_lock_sec_x.get()
             # 不在此處調用 tick，讓主循環處理，避免阻塞 UI 線程
         except Exception as e:
-            print(f"[Mouse Lock] Error in sec_x callback: {e}")
+            log_print(f"[Mouse Lock] Error in sec_x callback: {e}")
     
     def _on_mouse_lock_sec_y_changed(self):
         """Mouse Lock Sec Aimbot Y-Axis 開關回調"""
@@ -4574,7 +4578,7 @@ class ViewerApp(ctk.CTk):
             config.mouse_lock_sec_y = self.var_mouse_lock_sec_y.get()
             # 不在此處調用 tick，讓主循環處理，避免阻塞 UI 線程
         except Exception as e:
-            print(f"[Mouse Lock] Error in sec_y callback: {e}")
+            log_print(f"[Mouse Lock] Error in sec_y callback: {e}")
     
     def _check_for_updates(self):
         """Check for updates in background"""
@@ -4583,7 +4587,7 @@ class ViewerApp(ctk.CTk):
             if has_update:
                 self._show_update_dialog(latest_version, update_info)
         except Exception as e:
-            print(f"[Update] Failed to check for updates: {e}")
+            log_print(f"[Update] Failed to check for updates: {e}")
     
     def _show_update_dialog(self, latest_version, update_info):
         """Show update dialog with update information"""
@@ -4752,6 +4756,8 @@ class SettingsWindow(ctk.CTkToplevel):
             "show_opencv_detection": getattr(config, "show_opencv_detection", True),
             "show_opencv_roi": getattr(config, "show_opencv_roi", True),
             "show_opencv_triggerbot_mask": getattr(config, "show_opencv_triggerbot_mask", True),
+            "show_ndi_raw_stream_window": getattr(config, "show_ndi_raw_stream_window", False),
+            "show_udp_raw_stream_window": getattr(config, "show_udp_raw_stream_window", False),
             "show_mode_text": getattr(config, "show_mode_text", True),
             "show_aimbot_status": getattr(config, "show_aimbot_status", True),
             "show_triggerbot_status": getattr(config, "show_triggerbot_status", True),
@@ -4812,6 +4818,12 @@ class SettingsWindow(ctk.CTkToplevel):
         
         self.show_opencv_triggerbot_mask_var = tk.BooleanVar(value=self.temp_settings["show_opencv_triggerbot_mask"])
         self._add_grid_switch(opencv_grid_frame, "Triggerbot Mask", self.show_opencv_triggerbot_mask_var, 1, 1)
+
+        self.show_ndi_raw_stream_var = tk.BooleanVar(value=self.temp_settings["show_ndi_raw_stream_window"])
+        self._add_grid_switch(opencv_grid_frame, "NDI Raw Stream", self.show_ndi_raw_stream_var, 2, 0)
+
+        self.show_udp_raw_stream_var = tk.BooleanVar(value=self.temp_settings["show_udp_raw_stream_window"])
+        self._add_grid_switch(opencv_grid_frame, "UDP Raw Stream", self.show_udp_raw_stream_var, 2, 1)
 
         # 分隔
         self._add_spacer(content_frame)
@@ -4930,6 +4942,8 @@ class SettingsWindow(ctk.CTkToplevel):
         config.show_opencv_detection = self.show_opencv_detection_var.get()
         config.show_opencv_roi = self.show_opencv_roi_var.get()
         config.show_opencv_triggerbot_mask = self.show_opencv_triggerbot_mask_var.get()
+        config.show_ndi_raw_stream_window = self.show_ndi_raw_stream_var.get()
+        config.show_udp_raw_stream_window = self.show_udp_raw_stream_var.get()
         config.show_mode_text = self.show_mode_var.get()
         config.show_aimbot_status = self.show_aimbot_status_var.get()
         config.show_triggerbot_status = self.show_triggerbot_status_var.get()

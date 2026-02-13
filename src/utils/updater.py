@@ -2,6 +2,7 @@
 Update Checker Module
 Handles version checking and update notifications
 """
+from src.utils.debug_logger import log_print
 import json
 import os
 import sys
@@ -42,7 +43,7 @@ class UpdateChecker:
             else:
                 self.current_version = "1.0.0"
         except Exception as e:
-            print(f"[Updater] Failed to load current version: {e}")
+            log_print(f"[Updater] Failed to load current version: {e}")
             self.current_version = "1.0.0"
     
     def _load_update_preferences(self):
@@ -55,7 +56,7 @@ class UpdateChecker:
                     self.update_skipped_version = config.get("update_skipped_version", None)
                     self.never_update = config.get("never_update", False)
         except Exception as e:
-            print(f"[Updater] Failed to load update preferences: {e}")
+            log_print(f"[Updater] Failed to load update preferences: {e}")
     
     def _save_update_preferences(self):
         """Save update preferences to config.json"""
@@ -72,7 +73,7 @@ class UpdateChecker:
             with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=4, ensure_ascii=False)
         except Exception as e:
-            print(f"[Updater] Failed to save update preferences: {e}")
+            log_print(f"[Updater] Failed to save update preferences: {e}")
     
     def check_update(self, use_gitee=False):
         """
@@ -96,7 +97,7 @@ class UpdateChecker:
         
         # If primary fails, try fallback
         if not update_info:
-            print(f"[Updater] Primary source failed, trying fallback...")
+            log_print(f"[Updater] Primary source failed, trying fallback...")
             update_info = self._fetch_version_info(fallback_repo)
         
         if not update_info:
@@ -118,7 +119,7 @@ class UpdateChecker:
             else:
                 return False, self.latest_version, update_info
         except Exception as e:
-            print(f"[Updater] Version comparison error: {e}")
+            log_print(f"[Updater] Version comparison error: {e}")
             return False, None, None
     
     def _fetch_version_info(self, repo_url):
@@ -137,10 +138,10 @@ class UpdateChecker:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"[Updater] Failed to fetch version from {repo_url}: {e}")
+            log_print(f"[Updater] Failed to fetch version from {repo_url}: {e}")
             return None
         except json.JSONDecodeError as e:
-            print(f"[Updater] Failed to parse version JSON: {e}")
+            log_print(f"[Updater] Failed to parse version JSON: {e}")
             return None
     
     def skip_update(self):

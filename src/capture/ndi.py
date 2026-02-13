@@ -2,6 +2,7 @@
 NDI 管理模組
 處理 NDI 來源的搜尋、連接和視頻幀捕獲
 """
+from src.utils.debug_logger import log_print
 import queue
 import threading
 from cyndilib.finder import Finder
@@ -162,15 +163,15 @@ class NDIManager:
             if self.finder:
                 self.finder.close()
         except Exception as e:
-            print(f"[NDI] Finder cleanup error: {e}")
+            log_print(f"[NDI] Finder cleanup error: {e}")
         
         try:
             if self.receiver:
                 # 斷開接收器
                 self.receiver.set_source(None)
         except Exception as e:
-            print(f"[NDI] Receiver cleanup error: {e}")
+            log_print(f"[NDI] Receiver cleanup error: {e}")
         
         self.connected = False
-        print("[INFO] NDI resources cleaned up.")
+        log_print("[INFO] NDI resources cleaned up.")
 

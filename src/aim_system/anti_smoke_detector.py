@@ -4,6 +4,7 @@ Advanced anti-smoke system - Filters smoke particles and noise
 Enhanced with shape analysis and time-motion tracking system
 """
 
+from src.utils.debug_logger import log_print
 import numpy as np
 import time
 import importlib
@@ -18,7 +19,7 @@ except Exception:
     SCIPY_AVAILABLE = False
 
 if not SCIPY_AVAILABLE:
-    print("Warning: scipy not found. Convexity analysis will be done with simple method.")
+    log_print("Warning: scipy not found. Convexity analysis will be done with simple method.")
 
 
 class AntiSmokeDetector:
@@ -489,5 +490,5 @@ if __name__ == "__main__":
     is_valid = detector.is_valid_target(test_cluster)
     debug_info = detector.get_debug_info(test_cluster)
     
-    print(f"Test sonucu: {is_valid}")
-    print(debug_info)
+    log_print(f"Test sonucu: {is_valid}")
+    log_print(debug_info)

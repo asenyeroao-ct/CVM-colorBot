@@ -30,6 +30,7 @@ configs/*
 *.log
 *.tmp
 *.bak
+AGENTS.md
 
 # Compiled files
 *.pyd

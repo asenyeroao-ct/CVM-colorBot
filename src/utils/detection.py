@@ -1,3 +1,4 @@
+from src.utils.debug_logger import log_print
 import cv2
 import numpy as np
 from src.utils.config import config
@@ -10,29 +11,29 @@ _class_names = {}
 HSV_MIN = None
 HSV_MAX = None
 def test():
-    print("HSV Detection test initialized")
+    log_print("HSV Detection test initialized")
     dummy_img = np.zeros((100, 100, 3), dtype=np.uint8)
     hsv_img = cv2.cvtColor(dummy_img, cv2.COLOR_BGR2HSV)
-    print("HSV conversion done")
+    log_print("HSV conversion done")
 
 def load_model(model_path=None):
     global _model, _class_names, HSV_MIN, HSV_MAX
     config.model_load_error = ""
 
     try:
-        print("Loading HSV parameters...")
+        log_print("Loading HSV parameters...")
         yellow = [30, 125, 150, 30, 255, 255]
         purple = [144, 106, 172, 160, 255, 255]
 
         if config.color == "yellow":
             HSV_MIN = np.array([yellow[0], yellow[1], yellow[2]], dtype=np.uint8)
             HSV_MAX = np.array([yellow[3], yellow[4], yellow[5]], dtype=np.uint8)
-            print("Loaded HSV for yellow")
+            log_print("Loaded HSV for yellow")
 
         elif config.color == "purple":
             HSV_MIN = np.array([purple[0], purple[1], purple[2]], dtype=np.uint8)
             HSV_MAX = np.array([purple[3], purple[4], purple[5]], dtype=np.uint8)
-            print("Loaded HSV for purple")
+            log_print("Loaded HSV for purple")
 
         elif config.color == "custom":
             # 使用自訂HSV值
@@ -46,7 +47,7 @@ def load_model(model_path=None):
                 getattr(config, "custom_hsv_max_s", 255),
                 getattr(config, "custom_hsv_max_v", 255)
             ], dtype=np.uint8)
-            print(f"Loaded custom HSV: MIN={HSV_MIN}, MAX={HSV_MAX}")
+            log_print(f"Loaded custom HSV: MIN={HSV_MIN}, MAX={HSV_MAX}")
 
         else:
             raise ValueError(f"Unknown color {config.color}")

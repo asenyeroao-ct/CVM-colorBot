@@ -1,3 +1,4 @@
+from src.utils.debug_logger import log_print
 import threading
 import time
 
@@ -71,10 +72,10 @@ def _version_ok(ser):
 
 def _start_listener_thread():
     if state.listener_thread is None or not state.listener_thread.is_alive():
-        print("[INFO] Starting MakV2 listener thread...")
+        log_print("[INFO] Starting MakV2 listener thread...")
         state.listener_thread = threading.Thread(target=_listener_loop, daemon=True)
         state.listener_thread.start()
-        print("[INFO] MakV2 listener thread started.")
+        log_print("[INFO] MakV2 listener thread started.")
 
 
 def _listener_loop():
@@ -129,7 +130,7 @@ def connect(port: str = None, baud: int = None):
 
     if not ports:
         state.last_connect_error = "No COM port available for MakV2."
-        print(f"[ERROR] {state.last_connect_error}")
+        log_print(f"[ERROR] {state.last_connect_error}")
         return False
 
     baud_list = [int(baud)] if baud else list(DEFAULT_BAUD_RATES)
@@ -138,7 +139,7 @@ def connect(port: str = None, baud: int = None):
         for baud_value in baud_list:
             ser = None
             try:
-                print(f"[INFO] Probing MakV2 {port_name} @ {baud_value}...")
+                log_print(f"[INFO] Probing MakV2 {port_name} @ {baud_value}...")
                 ser = serial.Serial(port_name, baud_value, timeout=0.25)
                 time.sleep(0.08)
                 if not _version_ok(ser):
@@ -155,10 +156,10 @@ def connect(port: str = None, baud: int = None):
 
                 state.set_connected(True, "MakV2")
                 _start_listener_thread()
-                print(f"[INFO] Connected to MakV2 on {port_name} at {baud_value} baud.")
+                log_print(f"[INFO] Connected to MakV2 on {port_name} at {baud_value} baud.")
                 return True
             except Exception as e:
-                print(f"[WARN] MakV2 failed on {port_name}@{baud_value}: {e}")
+                log_print(f"[WARN] MakV2 failed on {port_name}@{baud_value}: {e}")
                 if ser:
                     try:
                         ser.close()
@@ -167,7 +168,7 @@ def connect(port: str = None, baud: int = None):
                 _safe_close_port()
 
     state.last_connect_error = "Could not connect to MakV2 device."
-    print(f"[ERROR] {state.last_connect_error}")
+    log_print(f"[ERROR] {state.last_connect_error}")
     return False
 
 

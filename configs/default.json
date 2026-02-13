@@ -83,6 +83,8 @@
     "show_opencv_detection": true,
     "show_opencv_roi": true,
     "show_opencv_triggerbot_mask": true,
+    "show_ndi_raw_stream_window": false,
+    "show_udp_raw_stream_window": false,
     "show_mode_text": true,
     "show_aimbot_status": true,
     "show_triggerbot_status": true,

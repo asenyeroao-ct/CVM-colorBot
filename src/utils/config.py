@@ -1,3 +1,4 @@
+from src.utils.debug_logger import log_print
 import json
 import os
 
@@ -172,6 +173,8 @@ class Config:
         self.show_opencv_detection = True  # Detection 視窗（main.py）
         self.show_opencv_roi = True  # ROI 視窗（Triggerbot.py）
         self.show_opencv_triggerbot_mask = True  # Mask 視窗（Triggerbot.py）
+        self.show_ndi_raw_stream_window = False
+        self.show_udp_raw_stream_window = False
         self.show_mode_text = True
         self.show_aimbot_status = True
         self.show_triggerbot_status = True
@@ -382,6 +385,8 @@ class Config:
             "show_opencv_detection": self.show_opencv_detection,
             "show_opencv_roi": self.show_opencv_roi,
             "show_opencv_triggerbot_mask": self.show_opencv_triggerbot_mask,
+            "show_ndi_raw_stream_window": self.show_ndi_raw_stream_window,
+            "show_udp_raw_stream_window": self.show_udp_raw_stream_window,
             "show_mode_text": self.show_mode_text,
             "show_aimbot_status": self.show_aimbot_status,
             "show_triggerbot_status": self.show_triggerbot_status,
@@ -461,7 +466,7 @@ class Config:
             with open(filename, 'w') as f:
                 json.dump(self.to_dict(), f, indent=4)
         except Exception as e:
-            print(f"[Config] Failed to save configuration: {e}")
+            log_print(f"[Config] Failed to save configuration: {e}")
     
     def load_from_file(self, filename="config.json"):
         """從文件載入配置"""
@@ -470,9 +475,9 @@ class Config:
                 with open(filename, 'r') as f:
                     data = json.load(f)
                 self.from_dict(data)
-                print(f"[Config] Configuration loaded from {filename}")
+                log_print(f"[Config] Configuration loaded from {filename}")
         except Exception as e:
-            print(f"[Config] Failed to load configuration: {e}")
+            log_print(f"[Config] Failed to load configuration: {e}")
     
 
 

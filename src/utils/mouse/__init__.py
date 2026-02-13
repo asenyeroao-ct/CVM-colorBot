@@ -1,5 +1,5 @@
 
-from src.utils.debug_logger import log_click, log_press, log_release
+from src.utils.debug_logger import log_click, log_press, log_release, log_print
 
 from . import ArduinoAPI, DHZAPI, MakV2, NetAPI, SendInputAPI, SerialAPI, state
 
@@ -417,12 +417,12 @@ class Mouse:
 
         if auto_connect:
             if not connect_to_makcu():
-                print(f"[ERROR] Mouse init failed to connect. reason={get_last_connect_error()}")
+                log_print(f"[ERROR] Mouse init failed to connect. reason={get_last_connect_error()}")
             else:
                 Mouse._listener = state.listener_thread
         else:
             disconnect_all()
-            print("[INFO] Mouse auto-connect disabled. Waiting for manual connect.")
+            log_print("[INFO] Mouse auto-connect disabled. Waiting for manual connect.")
         self._inited = True
 
     def move(self, x: float, y: float):
@@ -544,7 +544,7 @@ class Mouse:
         Mouse._instance = None
         Mouse._listener = None
         state.listener_thread = None
-        print("[INFO] Mouse backend cleaned up.")
+        log_print("[INFO] Mouse backend cleaned up.")
 
 
 _sync_public_state()

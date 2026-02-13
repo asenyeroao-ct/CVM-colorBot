@@ -1,3 +1,4 @@
+from src.utils.debug_logger import log_print
 import threading
 import time
 
@@ -57,16 +58,16 @@ def km_version_ok(ser):
             time.sleep(0.01)
         return False
     except Exception as e:
-        print(f"[WARN] km_version_ok: {e}")
+        log_print(f"[WARN] km_version_ok: {e}")
         return False
 
 
 def _start_listener_thread():
     if state.listener_thread is None or not state.listener_thread.is_alive():
-        print("[INFO] Starting serial listener thread...")
+        log_print("[INFO] Starting serial listener thread...")
         state.listener_thread = threading.Thread(target=_listener_loop, daemon=True)
         state.listener_thread.start()
-        print("[INFO] Serial listener thread started.")
+        log_print("[INFO] Serial listener thread started.")
 
 
 def _listener_loop():
@@ -96,10 +97,10 @@ def _listener_loop():
                 state.last_button_mask = v
 
         except serial.SerialException as e:
-            print(f"[ERROR] Serial listener exception: {e}")
+            log_print(f"[ERROR] Serial listener exception: {e}")
             break
         except Exception as e:
-            print(f"[WARN] Serial listener error: {e}")
+            log_print(f"[WARN] Serial listener error: {e}")
             time.sleep(0.001)
 
     state.reset_button_states()
@@ -117,7 +118,7 @@ def connect(port: str = None):
         ports = find_com_ports()
         if not ports:
             state.last_connect_error = "No supported serial devices found."
-            print(f"[ERROR] {state.last_connect_error}")
+            log_print(f"[ERROR] {state.last_connect_error}")
             return False
 
     for port_name, dev_name in ports:
@@ -126,19 +127,19 @@ def connect(port: str = None):
             try:
                 if dev_name in ("MAKCU", "MANUAL"):
                     label = "MANUAL" if dev_name == "MANUAL" else "MAKCU"
-                    print(f"[INFO] Probing {label} {port_name} @ {baud} with km.version()...")
+                    log_print(f"[INFO] Probing {label} {port_name} @ {baud} with km.version()...")
                     ser = serial.Serial(port_name, baud, timeout=0.3)
                     time.sleep(0.1)
                     if not km_version_ok(ser):
                         ser.close()
                         time.sleep(0.1)
                         continue
-                    print(f"[INFO] {label} responded at {baud}, using it.")
+                    log_print(f"[INFO] {label} responded at {baud}, using it.")
                     ser.close()
                     time.sleep(0.1)
                     state.makcu = serial.Serial(port_name, baud, timeout=0.1)
                 else:
-                    print(f"[INFO] Trying {dev_name} {port_name} @ {baud} ...")
+                    log_print(f"[INFO] Trying {dev_name} {port_name} @ {baud} ...")
                     ser = serial.Serial(port_name, baud, timeout=0.1)
                     with state.makcu_lock:
                         ser.write(b"km.buttons(1)\r")
@@ -153,10 +154,10 @@ def connect(port: str = None):
 
                 state.set_connected(True, "Serial")
                 _start_listener_thread()
-                print(f"[INFO] Connected to {dev_name} on {port_name} at {baud} baud.")
+                log_print(f"[INFO] Connected to {dev_name} on {port_name} at {baud} baud.")
                 return True
             except Exception as e:
-                print(f"[WARN] Failed {dev_name}@{baud}: {e}")
+                log_print(f"[WARN] Failed {dev_name}@{baud}: {e}")
                 if ser:
                     try:
                         ser.close()
@@ -168,7 +169,7 @@ def connect(port: str = None):
         state.last_connect_error = f"Could not connect to manual serial port: {selected_port}."
     else:
         state.last_connect_error = "Could not connect to any supported serial device."
-    print(f"[ERROR] {state.last_connect_error}")
+    log_print(f"[ERROR] {state.last_connect_error}")
     return False
 
 
@@ -253,11 +254,11 @@ def test_move():
 
 def switch_to_4m():
     if state.active_backend != "Serial":
-        print("[WARN] switch_to_4m is only supported in Serial mode.")
+        log_print("[WARN] switch_to_4m is only supported in Serial mode.")
         return False
 
     if not state.is_connected or not state.makcu or not state.makcu.is_open:
-        print("[ERROR] Device not connected. Please connect first.")
+        log_print("[ERROR] Device not connected. Please connect first.")
         return False
 
     port_name = state.makcu.port
@@ -265,14 +266,14 @@ def switch_to_4m():
     try:
         current_baud = state.makcu.baudrate
         if current_baud == 4_000_000:
-            print("[INFO] Device already at 4M baud rate.")
+            log_print("[INFO] Device already at 4M baud rate.")
             return True
 
         if current_baud != 115_200:
-            print(f"[WARN] Current baud rate is {current_baud}, not 115200. Cannot switch to 4M.")
+            log_print(f"[WARN] Current baud rate is {current_baud}, not 115200. Cannot switch to 4M.")
             return False
 
-        print("[INFO] Sending 4M handshake command...")
+        log_print("[INFO] Sending 4M handshake command...")
         with state.makcu_lock:
             state.makcu.write(BAUD_CHANGE_COMMAND)
             state.makcu.flush()
@@ -280,12 +281,12 @@ def switch_to_4m():
         state.makcu.close()
         time.sleep(0.15)
 
-        print("[INFO] Attempting to connect at 4M baud rate...")
+        log_print("[INFO] Attempting to connect at 4M baud rate...")
         ser4m = serial.Serial(port_name, 4_000_000, timeout=0.3)
         time.sleep(0.1)
 
         if km_version_ok(ser4m):
-            print(f"[INFO] Successfully switched to 4M on {port_name}.")
+            log_print(f"[INFO] Successfully switched to 4M on {port_name}.")
             ser4m.close()
             time.sleep(0.1)
             state.makcu = serial.Serial(port_name, 4_000_000, timeout=0.1)
@@ -296,7 +297,7 @@ def switch_to_4m():
             _start_listener_thread()
             return True
 
-        print("[WARN] 4M handshake failed, reconnecting at 115200...")
+        log_print("[WARN] 4M handshake failed, reconnecting at 115200...")
         ser4m.close()
         time.sleep(0.1)
         state.makcu = serial.Serial(port_name, 115_200, timeout=0.1)
@@ -308,7 +309,7 @@ def switch_to_4m():
         return False
 
     except Exception as e:
-        print(f"[ERROR] Failed to switch to 4M: {e}")
+        log_print(f"[ERROR] Failed to switch to 4M: {e}")
         try:
             if state.makcu and state.makcu.is_open:
                 state.makcu.close()
@@ -359,7 +360,7 @@ def lock_movement_x(lock: bool = True, skip_lock: bool = False):
                     _send_cmd_no_wait(f"lock_mx({1 if lock else 0})")
                     state.movement_lock_state["lock_x"] = lock
     except Exception as e:
-        print(f"[Mouse Lock] Error in lock_movement_x: {e}")
+        log_print(f"[Mouse Lock] Error in lock_movement_x: {e}")
 
 
 def lock_movement_y(lock: bool = True, skip_lock: bool = False):
@@ -377,7 +378,7 @@ def lock_movement_y(lock: bool = True, skip_lock: bool = False):
                     _send_cmd_no_wait(f"lock_my({1 if lock else 0})")
                     state.movement_lock_state["lock_y"] = lock
     except Exception as e:
-        print(f"[Mouse Lock] Error in lock_movement_y: {e}")
+        log_print(f"[Mouse Lock] Error in lock_movement_y: {e}")
 
 
 def update_movement_lock(lock_x: bool, lock_y: bool, is_main: bool = True):
@@ -401,7 +402,7 @@ def update_movement_lock(lock_x: bool, lock_y: bool, is_main: bool = True):
         finally:
             state.movement_lock_state["lock"].release()
     except Exception as e:
-        print(f"[Mouse Lock] Error in update_movement_lock: {e}")
+        log_print(f"[Mouse Lock] Error in update_movement_lock: {e}")
 
 
 def tick_movement_lock_manager():
@@ -451,7 +452,7 @@ def tick_movement_lock_manager():
         finally:
             state.movement_lock_state["lock"].release()
     except Exception as e:
-        print(f"[Mouse Lock] Error in tick_movement_lock_manager: {e}")
+        log_print(f"[Mouse Lock] Error in tick_movement_lock_manager: {e}")
 
 
 def mask_manager_tick(selected_idx: int, aimbot_running: bool):

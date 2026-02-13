@@ -36,6 +36,9 @@ class AimTracker:
     支持多種模式（Normal、Silent）和配置選項。
     """
     
+    RAW_STREAM_NDI_WINDOW = "NDI Raw Stream"
+    RAW_STREAM_UDP_WINDOW = "UDP Raw Stream"
+
     def __init__(self, app, target_fps=80):
         """
         初始化 AimTracker
@@ -141,6 +144,7 @@ class AimTracker:
             self._track_thread.join(timeout=1.0)
         except Exception:
             pass
+        self._close_raw_stream_windows()
 
     def _process_move_queue(self):
         """
@@ -315,6 +319,46 @@ class AimTracker:
         if getattr(config, "enabletb", False):
             cv2.circle(img, (center_x, center_y), int(getattr(config, "tbfovsize", self.tbfovsize)), (255, 255, 255), 2)
 
+    def _update_raw_stream_windows(self, raw_img):
+        """Show or close raw-stream windows for NDI/UDP based on settings."""
+        mode = getattr(self.app.capture, "mode", "")
+        show_windows = bool(getattr(config, "show_opencv_windows", True))
+        show_ndi = show_windows and mode == "NDI" and bool(getattr(config, "show_ndi_raw_stream_window", False))
+        show_udp = show_windows and mode == "UDP" and bool(getattr(config, "show_udp_raw_stream_window", False))
+
+        try:
+            if show_ndi:
+                cv2.imshow(self.RAW_STREAM_NDI_WINDOW, raw_img)
+            else:
+                cv2.destroyWindow(self.RAW_STREAM_NDI_WINDOW)
+        except Exception:
+            pass
+
+        try:
+            if show_udp:
+                cv2.imshow(self.RAW_STREAM_UDP_WINDOW, raw_img)
+            else:
+                cv2.destroyWindow(self.RAW_STREAM_UDP_WINDOW)
+        except Exception:
+            pass
+
+        if show_ndi or show_udp:
+            try:
+                cv2.waitKey(1)
+            except Exception:
+                pass
+
+    def _close_raw_stream_windows(self):
+        """Close raw-stream windows."""
+        try:
+            cv2.destroyWindow(self.RAW_STREAM_NDI_WINDOW)
+        except Exception:
+            pass
+        try:
+            cv2.destroyWindow(self.RAW_STREAM_UDP_WINDOW)
+        except Exception:
+            pass
+
     def track_once(self):
         """
         執行一次完整的追蹤處理
@@ -330,6 +374,7 @@ class AimTracker:
         8. 顯示檢測結果窗口
         """
         if not self.app.capture.is_connected():
+            self._close_raw_stream_windows()
             return
 
         # Button Mask 管理
@@ -343,11 +388,19 @@ class AimTracker:
             pass
 
         # 使用 CaptureService 讀取 BGR 幀
-        bgr_img = self.app.capture.read_frame()
-        if bgr_img is None:
+        raw_bgr_img = self.app.capture.read_frame(apply_fov=False)
+        if raw_bgr_img is None:
             return
 
         # 確保圖像是連續且可寫的數組，以避免 OpenCV 錯誤
+        if not raw_bgr_img.flags['C_CONTIGUOUS']:
+            raw_bgr_img = np.ascontiguousarray(raw_bgr_img)
+
+        self._update_raw_stream_windows(raw_bgr_img)
+
+        bgr_img = self.app.capture.apply_mode_fov(raw_bgr_img)
+        if bgr_img is None:
+            return
         if not bgr_img.flags['C_CONTIGUOUS']:
             bgr_img = np.ascontiguousarray(bgr_img)
 

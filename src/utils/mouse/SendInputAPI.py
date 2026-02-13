@@ -1,3 +1,4 @@
+from src.utils.debug_logger import log_print
 import ctypes
 from ctypes import wintypes
 
@@ -57,7 +58,7 @@ def connect():
     disconnect()
     state.set_connected(True, "SendInput")
     state.reset_button_states()
-    print("[INFO] SendInput backend ready.")
+    log_print("[INFO] SendInput backend ready.")
     return True
 
 

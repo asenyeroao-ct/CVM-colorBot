@@ -1,3 +1,4 @@
+from src.utils.debug_logger import log_print
 import threading
 import time
 
@@ -72,10 +73,10 @@ def _handle_incoming_line(line: str):
 
 def _start_listener_thread():
     if state.listener_thread is None or not state.listener_thread.is_alive():
-        print("[INFO] Starting Arduino listener thread...")
+        log_print("[INFO] Starting Arduino listener thread...")
         state.listener_thread = threading.Thread(target=_listener_loop, daemon=True)
         state.listener_thread.start()
-        print("[INFO] Arduino listener thread started.")
+        log_print("[INFO] Arduino listener thread started.")
 
 
 def _listener_loop():
@@ -94,10 +95,10 @@ def _listener_loop():
             line = raw.decode("ascii", errors="ignore").strip()
             _handle_incoming_line(line)
         except serial.SerialException as e:
-            print(f"[ERROR] Arduino listener exception: {e}")
+            log_print(f"[ERROR] Arduino listener exception: {e}")
             break
         except Exception as e:
-            print(f"[WARN] Arduino listener error: {e}")
+            log_print(f"[WARN] Arduino listener error: {e}")
             time.sleep(0.005)
 
     state.reset_button_states()
@@ -116,7 +117,7 @@ def connect(port: str = None, baud: int = None):
 
     if not ports:
         state.last_connect_error = "No COM port available for Arduino."
-        print(f"[ERROR] {state.last_connect_error}")
+        log_print(f"[ERROR] {state.last_connect_error}")
         return False
 
     baud_list = []
@@ -133,7 +134,7 @@ def connect(port: str = None, baud: int = None):
         for baud_value in baud_list:
             ser = None
             try:
-                print(f"[INFO] Probing Arduino {port_name} @ {baud_value}...")
+                log_print(f"[INFO] Probing Arduino {port_name} @ {baud_value}...")
                 ser = serial.Serial(port_name, int(baud_value), timeout=0.05, write_timeout=0.2)
                 time.sleep(0.1)
                 ser.reset_input_buffer()
@@ -141,10 +142,10 @@ def connect(port: str = None, baud: int = None):
                 state.makcu = ser
                 state.set_connected(True, "Arduino")
                 _start_listener_thread()
-                print(f"[INFO] Connected to Arduino on {port_name} at {baud_value} baud.")
+                log_print(f"[INFO] Connected to Arduino on {port_name} at {baud_value} baud.")
                 return True
             except Exception as e:
-                print(f"[WARN] Arduino failed on {port_name}@{baud_value}: {e}")
+                log_print(f"[WARN] Arduino failed on {port_name}@{baud_value}: {e}")
                 if ser:
                     try:
                         ser.close()
@@ -157,7 +158,7 @@ def connect(port: str = None, baud: int = None):
         if selected_port
         else "Could not connect to Arduino on any detected COM port."
     )
-    print(f"[ERROR] {state.last_connect_error}")
+    log_print(f"[ERROR] {state.last_connect_error}")
     return False
 
 
@@ -182,7 +183,7 @@ def _send_line(payload: str):
             state.makcu.write(f"{payload}\n".encode("ascii", "ignore"))
             state.makcu.flush()
     except Exception as e:
-        print(f"[Mouse-Arduino] command failed: {payload} ({e})")
+        log_print(f"[Mouse-Arduino] command failed: {payload} ({e})")
 
 
 def _split_axis(delta: int):

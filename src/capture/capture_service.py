@@ -1,3 +1,4 @@
+from src.utils.debug_logger import log_print
 import numpy as np
 from .ndi import NDIManager
 import cv2
@@ -7,32 +8,32 @@ try:
     # 優先使用包導入方式 (從 OBS_UDP.py)
     from .OBS_UDP import OBS_UDP_Manager
     HAS_UDP = True
-    print("[Capture] OBS_UDP module loaded successfully from OBS_UDP.py")
+    log_print("[Capture] OBS_UDP module loaded successfully from OBS_UDP.py")
 except ImportError as e:
     HAS_UDP = False
-    print(f"[Capture] OBS_UDP module import failed: {e}")
-    print("[Capture] UDP mode will be unavailable. Please ensure OBS_UDP.py exists in 'capture/' folder.")
+    log_print(f"[Capture] OBS_UDP module import failed: {e}")
+    log_print("[Capture] UDP mode will be unavailable. Please ensure OBS_UDP.py exists in 'capture/' folder.")
 
 # 嘗試導入 CaptureCard
 try:
     from .CaptureCard import create_capture_card_camera
     HAS_CAPTURECARD = True
-    print("[Capture] CaptureCard module loaded successfully.")
+    log_print("[Capture] CaptureCard module loaded successfully.")
 except ImportError as e:
     HAS_CAPTURECARD = False
-    print(f"[Capture] CaptureCard module import failed: {e}")
-    print("[Capture] CaptureCard mode will be unavailable.")
+    log_print(f"[Capture] CaptureCard module import failed: {e}")
+    log_print("[Capture] CaptureCard mode will be unavailable.")
 
 # 嘗試導入 MSS
 try:
     from .mss_capture import MSSCapture, HAS_MSS
     if HAS_MSS:
-        print("[Capture] MSS module loaded successfully.")
+        log_print("[Capture] MSS module loaded successfully.")
     else:
-        print("[Capture] MSS python package not installed. Run: pip install mss")
+        log_print("[Capture] MSS python package not installed. Run: pip install mss")
 except ImportError as e:
     HAS_MSS = False
-    print(f"[Capture] MSS module import failed: {e}")
+    log_print(f"[Capture] MSS module import failed: {e}")
 
 class CaptureService:
     """
@@ -166,7 +167,7 @@ class CaptureService:
             else:
                 return False, "Connection failed - check IP/Port and ensure OBS is streaming"
         except Exception as e:
-            print(f"[Capture] UDP connection exception: {e}")
+            log_print(f"[Capture] UDP connection exception: {e}")
             return False, str(e)
 
     def connect_capture_card(self, config):
@@ -184,7 +185,7 @@ class CaptureService:
             self.capture_card_camera = create_capture_card_camera(config_to_use)
             return True, None
         except Exception as e:
-            print(f"[Capture] CaptureCard connection exception: {e}")
+            log_print(f"[Capture] CaptureCard connection exception: {e}")
             return False, str(e)
 
     def connect_mss(self, monitor_index=1, fov_x=320, fov_y=320):
@@ -206,7 +207,7 @@ class CaptureService:
             else:
                 return False, err
         except Exception as e:
-            print(f"[Capture] MSS connection exception: {e}")
+            log_print(f"[Capture] MSS connection exception: {e}")
             return False, str(e)
 
     def disconnect(self):
@@ -280,16 +281,38 @@ class CaptureService:
         # 裁切畫面
         cropped = frame[top:bottom, left:right]
         return cropped
-    
-    def read_frame(self):
+
+    def _apply_mode_fov(self, frame):
+        """Apply mode-specific center crop (NDI/UDP only)."""
+        if frame is None:
+            return None
+
+        from src.utils.config import config as global_config
+
+        if self.mode == "NDI" and getattr(global_config, "ndi_fov_enabled", False):
+            fov = int(getattr(global_config, "ndi_fov", 320))
+            return self._crop_frame_center(frame, fov, fov)
+
+        if self.mode == "UDP" and getattr(global_config, "udp_fov_enabled", False):
+            fov = int(getattr(global_config, "udp_fov", 320))
+            return self._crop_frame_center(frame, fov, fov)
+
+        return frame
+
+    def apply_mode_fov(self, frame):
+        """Public wrapper for applying mode-specific FOV crop."""
+        try:
+            return self._apply_mode_fov(frame)
+        except Exception:
+            return frame
+
+    def read_frame(self, apply_fov=True):
         """
         讀取當前幀
         
         Returns:
             numpy.ndarray: BGR 格式的圖像，如果讀取失敗則返回 None
         """
-        from src.utils.config import config as global_config
-        
         if self.mode == "NDI":
             frame = self.ndi.capture_frame()
             if frame is None:
@@ -306,13 +329,12 @@ class CaptureService:
                 bgr_img = img[:, :, [2, 1, 0]]
                 
                 # 如果啟用裁切，則應用中心裁切（正方形）
-                if getattr(global_config, "ndi_fov_enabled", False):
-                    fov = int(getattr(global_config, "ndi_fov", 320))
-                    return self._crop_frame_center(bgr_img, fov, fov)
+                if apply_fov:
+                    bgr_img = self._apply_mode_fov(bgr_img)
                 
                 return bgr_img
             except Exception as e:
-                print(f"[Capture] NDI frame conversion error: {e}")
+                log_print(f"[Capture] NDI frame conversion error: {e}")
                 return None
                 
         elif self.mode == "UDP":
@@ -322,7 +344,7 @@ class CaptureService:
             try:
                 receiver = self.udp_manager.get_receiver()
                 if not receiver:
-                    print("[Capture] UDP receiver is None")
+                    log_print("[Capture] UDP receiver is None")
                     return None
                 
                 # OBS_UDP_Receiver.get_current_frame() 返回 BGR numpy array
@@ -336,13 +358,12 @@ class CaptureService:
                     return None
                 
                 # 如果啟用裁切，則應用中心裁切（正方形）
-                if getattr(global_config, "udp_fov_enabled", False):
-                    fov = int(getattr(global_config, "udp_fov", 320))
-                    return self._crop_frame_center(frame, fov, fov)
+                if apply_fov:
+                    frame = self._apply_mode_fov(frame)
                     
                 return frame
             except Exception as e:
-                print(f"[Capture] UDP read frame error: {e}")
+                log_print(f"[Capture] UDP read frame error: {e}")
                 return None
         
         elif self.mode == "CaptureCard":
@@ -359,7 +380,7 @@ class CaptureService:
                     
                 return frame
             except Exception as e:
-                print(f"[Capture] CaptureCard read frame error: {e}")
+                log_print(f"[Capture] CaptureCard read frame error: {e}")
                 return None
         
         elif self.mode == "MSS":
@@ -383,7 +404,7 @@ class CaptureService:
                 
                 return frame
             except Exception as e:
-                print(f"[Capture] MSS read frame error: {e}")
+                log_print(f"[Capture] MSS read frame error: {e}")
                 return None
             
         return None
@@ -393,7 +414,7 @@ class CaptureService:
         try:
             self.ndi.cleanup()
         except Exception as e:
-            print(f"[Capture] NDI cleanup error (ignored): {e}")
+            log_print(f"[Capture] NDI cleanup error (ignored): {e}")
         
         try:
             if self.udp_manager and self.udp_manager.is_connected:
@@ -408,19 +429,19 @@ class CaptureService:
                 finally:
                     sys.stderr = old_stderr
         except Exception as e:
-            print(f"[Capture] UDP cleanup error (ignored): {e}")
+            log_print(f"[Capture] UDP cleanup error (ignored): {e}")
         
         try:
             if self.capture_card_camera:
                 self.capture_card_camera.stop()
                 self.capture_card_camera = None
         except Exception as e:
-            print(f"[Capture] CaptureCard cleanup error (ignored): {e}")
+            log_print(f"[Capture] CaptureCard cleanup error (ignored): {e}")
         
         try:
             if self.mss_capture:
                 self.mss_capture.cleanup()
                 self.mss_capture = None
         except Exception as e:
-            print(f"[Capture] MSS cleanup error (ignored): {e}")
+            log_print(f"[Capture] MSS cleanup error (ignored): {e}")
 

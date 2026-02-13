@@ -1,3 +1,4 @@
+from src.utils.debug_logger import log_print
 import glob
 import importlib.util
 import os
@@ -48,7 +49,7 @@ def _load_module():
             sys.modules["kmNet"] = module
             state.kmnet_module = module
             _loaded_module_path = pyd_path
-            print(f"[INFO] kmNet loaded from: {pyd_path}")
+            log_print(f"[INFO] kmNet loaded from: {pyd_path}")
             return state.kmnet_module
         except Exception as e:
             state.last_connect_error = f"Failed loading {os.path.basename(pyd_path)}: {e}"
@@ -110,12 +111,12 @@ def connect(ip: str, port: str, uuid: str):
     if module is None:
         if not state.last_connect_error:
             state.last_connect_error = "kmNet module load failed"
-        print(f"[ERROR] {state.last_connect_error}")
+        log_print(f"[ERROR] {state.last_connect_error}")
         return False
 
     if not hasattr(module, "init"):
         state.last_connect_error = "kmNet.init not found"
-        print(f"[ERROR] {state.last_connect_error}")
+        log_print(f"[ERROR] {state.last_connect_error}")
         return False
 
     # Run init preflight in a child process.
@@ -123,28 +124,28 @@ def connect(ip: str, port: str, uuid: str):
     ok_probe, probe_error = _preflight_init(str(ip), str(port), str(uuid), timeout_sec=3.0)
     if not ok_probe:
         state.last_connect_error = f"{probe_error}"
-        print(f"[ERROR] {state.last_connect_error}")
+        log_print(f"[ERROR] {state.last_connect_error}")
         return False
 
     try:
         ret = int(module.init(str(ip), str(port), str(uuid)))
         if ret != 0:
             state.last_connect_error = f"kmNet.init failed (code={ret})"
-            print(f"[ERROR] {state.last_connect_error}")
+            log_print(f"[ERROR] {state.last_connect_error}")
             return False
 
         try:
             if hasattr(module, "monitor"):
                 module.monitor(30000)
         except Exception as mon_err:
-            print(f"[WARN] kmNet.monitor failed: {mon_err}")
+            log_print(f"[WARN] kmNet.monitor failed: {mon_err}")
 
         state.set_connected(True, "Net")
-        print(f"[INFO] Connected to kmNet at {ip}:{port} (UUID: {uuid})")
+        log_print(f"[INFO] Connected to kmNet at {ip}:{port} (UUID: {uuid})")
         return True
     except Exception as e:
         state.last_connect_error = f"kmNet connection error: {e}"
-        print(f"[ERROR] {state.last_connect_error}")
+        log_print(f"[ERROR] {state.last_connect_error}")
         return False
 
 
@@ -189,7 +190,7 @@ def move(x: float, y: float):
     try:
         state.kmnet_module.move(int(x), int(y))
     except Exception as e:
-        print(f"[Mouse-Net] move failed: {e}")
+        log_print(f"[Mouse-Net] move failed: {e}")
 
 
 def move_bezier(x: float, y: float, segments: int, ctrl_x: float, ctrl_y: float):
@@ -203,4 +204,4 @@ def left(isdown: int):
     try:
         state.kmnet_module.left(1 if isdown else 0)
     except Exception as e:
-        print(f"[Mouse-Net] left failed: {e}")
+        log_print(f"[Mouse-Net] left failed: {e}")
