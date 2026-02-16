@@ -11,6 +11,7 @@ active_backend = "Serial"
 last_connect_error = ""
 
 kmnet_module = None
+kmboxa_module = None
 makv2_module = None
 dhz_client = None
 

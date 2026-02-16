@@ -58,7 +58,7 @@ class Config:
         self.selected_2_tb = 2
         self.in_game_sens = 0.235
         self.mouse_dpi = 800
-        self.mouse_api = "Serial"  # Serial, Arduino, SendInput, Net, MakV2, DHZ
+        self.mouse_api = "Serial"  # Serial, Arduino, SendInput, Net, KmboxA, MakV2, DHZ
         self.auto_connect_mouse_api = False
         self.serial_port_mode = "Auto"  # Auto, Manual
         self.serial_port = ""
@@ -69,6 +69,9 @@ class Config:
         self.net_port = "6234"
         self.net_uuid = ""
         self.net_mac = ""  # deprecated alias of net_uuid
+        self.kmboxa_vid = 0
+        self.kmboxa_pid = 0
+        self.kmboxa_vid_pid = "0/0"
         self.makv2_port = ""
         self.makv2_baud = 4000000
         self.dhz_ip = "192.168.2.188"
@@ -330,6 +333,9 @@ class Config:
             "net_port": self.net_port,
             "net_uuid": self.net_uuid,
             "net_mac": self.net_mac,
+            "kmboxa_vid": self.kmboxa_vid,
+            "kmboxa_pid": self.kmboxa_pid,
+            "kmboxa_vid_pid": self.kmboxa_vid_pid,
             "makv2_port": self.makv2_port,
             "makv2_baud": self.makv2_baud,
             "dhz_ip": self.dhz_ip,
@@ -529,6 +535,77 @@ class Config:
         if not net_uuid and net_mac:
             self.net_uuid = net_mac
         self.net_mac = self.net_uuid
+        try:
+            self.kmboxa_vid = int(getattr(self, "kmboxa_vid", 0))
+        except Exception:
+            self.kmboxa_vid = 0
+        try:
+            self.kmboxa_pid = int(getattr(self, "kmboxa_pid", 0))
+        except Exception:
+            self.kmboxa_pid = 0
+        raw_vid_pid = str(getattr(self, "kmboxa_vid_pid", "")).strip()
+        if raw_vid_pid:
+            def _parse_kmboxa_token(token):
+                token_str = str(token).strip()
+                if token_str.lower().startswith("v"):
+                    token_str = token_str[1:].strip()
+                if token_str.lower().startswith("d:"):
+                    return int(token_str[2:].strip(), 10)
+                if token_str.lower().startswith("h:"):
+                    return int(token_str[2:].strip(), 16)
+                if token_str.lower().startswith("0x"):
+                    return int(token_str, 16)
+                if token_str.isdigit() and len(token_str) == 4:
+                    return int(token_str, 16)
+                if any(ch in "abcdefABCDEF" for ch in token_str):
+                    return int(token_str, 16)
+                return int(token_str, 10)
+
+            parsed_vid = self.kmboxa_vid
+            parsed_pid = self.kmboxa_pid
+            is_v_prefixed = raw_vid_pid.lower().startswith("v")
+            compact_v = raw_vid_pid[1:].strip() if is_v_prefixed else raw_vid_pid
+            if is_v_prefixed and compact_v and all(ch in "0123456789abcdefABCDEF" for ch in compact_v) and 5 <= len(compact_v) <= 8:
+                try:
+                    parsed_vid = int(compact_v[:4], 16)
+                    parsed_pid = int(compact_v[4:], 16)
+                except Exception:
+                    pass
+                self.kmboxa_vid = int(parsed_vid)
+                self.kmboxa_pid = int(parsed_pid)
+                self.kmboxa_vid_pid = f"{int(self.kmboxa_vid)}/{int(self.kmboxa_pid)}"
+                raw_vid_pid = ""
+            for sep in ("/", ":", ",", ";", "|", " "):
+                if sep in raw_vid_pid:
+                    parts = [p for p in raw_vid_pid.split(sep) if str(p).strip()]
+                    if len(parts) >= 2:
+                        try:
+                            parsed_vid = _parse_kmboxa_token(parts[0])
+                            parsed_pid = _parse_kmboxa_token(parts[1])
+                        except Exception:
+                            pass
+                    break
+            else:
+                compact = raw_vid_pid[1:].strip() if raw_vid_pid.lower().startswith("v") else raw_vid_pid
+                if compact.isdigit() and len(compact) == 8:
+                    try:
+                        parsed_vid = int(compact[:4], 16)
+                        parsed_pid = int(compact[4:], 16)
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        packed = _parse_kmboxa_token(compact)
+                        if packed > 0xFFFF:
+                            parsed_vid = (packed >> 16) & 0xFFFF
+                            parsed_pid = packed & 0xFFFF
+                        else:
+                            parsed_vid = packed
+                    except Exception:
+                        pass
+            self.kmboxa_vid = int(parsed_vid)
+            self.kmboxa_pid = int(parsed_pid)
+        self.kmboxa_vid_pid = f"{int(self.kmboxa_vid)}/{int(self.kmboxa_pid)}"
         # Ensure UI section state is always a dict[str, bool].
         raw_states = getattr(self, "ui_collapsible_states", {})
         if isinstance(raw_states, dict):

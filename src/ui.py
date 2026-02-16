@@ -99,6 +99,9 @@ class ViewerApp(ctk.CTk):
         self.saved_net_ip = getattr(config, "net_ip", "192.168.2.188")
         self.saved_net_port = getattr(config, "net_port", "6234")
         self.saved_net_uuid = getattr(config, "net_uuid", getattr(config, "net_mac", ""))
+        self.saved_kmboxa_vid_pid = str(
+            getattr(config, "kmboxa_vid_pid", f"{getattr(config, 'kmboxa_vid', 0)}/{getattr(config, 'kmboxa_pid', 0)}")
+        )
         self.saved_serial_port_mode = str(getattr(config, "serial_port_mode", "Auto"))
         self.saved_serial_port = str(getattr(config, "serial_port", ""))
         self.saved_arduino_port = str(getattr(config, "arduino_port", ""))
@@ -416,7 +419,7 @@ class ViewerApp(ctk.CTk):
         self.mouse_api_option = self._add_option_row_in_frame(
             sec_hardware,
             "Input API",
-            ["Serial", "Arduino", "SendInput", "Net", "MakV2", "MakV2Binary", "DHZ"],
+            ["Serial", "Arduino", "SendInput", "Net", "KmboxA", "MakV2", "MakV2Binary", "DHZ"],
             self._on_mouse_api_changed,
         )
         self.var_auto_connect_mouse_api = tk.BooleanVar(value=bool(getattr(config, "auto_connect_mouse_api", False)))
@@ -430,6 +433,8 @@ class ViewerApp(ctk.CTk):
         current_mouse_api_norm = str(current_mouse_api).strip().lower()
         if current_mouse_api_norm == "net":
             current_mouse_api = "Net"
+        elif current_mouse_api_norm in ("kmboxa", "kmboxa_api", "kmboxaapi", "kma", "kmboxa-api"):
+            current_mouse_api = "KmboxA"
         elif current_mouse_api_norm == "dhz":
             current_mouse_api = "DHZ"
         elif current_mouse_api_norm in ("makv2binary", "makv2_binary", "makv2-binary", "binary"):
@@ -450,6 +455,13 @@ class ViewerApp(ctk.CTk):
         self.saved_net_ip = getattr(config, "net_ip", self.saved_net_ip)
         self.saved_net_port = getattr(config, "net_port", self.saved_net_port)
         self.saved_net_uuid = getattr(config, "net_uuid", getattr(config, "net_mac", self.saved_net_uuid))
+        self.saved_kmboxa_vid_pid = str(
+            getattr(
+                config,
+                "kmboxa_vid_pid",
+                f"{getattr(config, 'kmboxa_vid', 0)}/{getattr(config, 'kmboxa_pid', 0)}",
+            )
+        )
         self.saved_arduino_port = str(getattr(config, "arduino_port", self.saved_arduino_port))
         self.saved_arduino_baud = str(getattr(config, "arduino_baud", self.saved_arduino_baud))
         self.saved_makv2_port = getattr(config, "makv2_port", self.saved_makv2_port)
@@ -696,6 +708,8 @@ class ViewerApp(ctk.CTk):
         mode_norm = str(mode).strip().lower()
         if mode_norm == "net":
             mode = "Net"
+        elif mode_norm in ("kmboxa", "kmboxa_api", "kmboxaapi", "kma", "kmboxa-api"):
+            mode = "KmboxA"
         elif mode_norm == "dhz":
             mode = "DHZ"
         elif mode_norm in ("makv2", "mak_v2", "mak-v2"):
@@ -896,6 +910,44 @@ class ViewerApp(ctk.CTk):
             self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
             return
 
+        if mode == "KmboxA":
+            dll_name = "kmA.pyd"
+            try:
+                from src.utils.mouse import get_expected_kmboxa_dll_name
+
+                dll_name = get_expected_kmboxa_dll_name()
+            except Exception:
+                pass
+
+            tip = ctk.CTkLabel(
+                self.hardware_content_frame,
+                text=f"KmboxA API auto DLL by Python version: {dll_name}",
+                font=("Roboto", 10),
+                text_color=COLOR_TEXT_DIM,
+            )
+            tip.pack(anchor="w", pady=(0, 8))
+
+            vid_pid_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            vid_pid_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(vid_pid_frame, text="VID/PID", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.kmboxa_vid_pid_entry = ctk.CTkEntry(
+                vid_pid_frame,
+                fg_color=COLOR_SURFACE,
+                border_width=0,
+                text_color=COLOR_TEXT,
+                width=170,
+            )
+            self.kmboxa_vid_pid_entry.pack(side="right")
+            self.kmboxa_vid_pid_entry.insert(0, self.saved_kmboxa_vid_pid)
+            self.kmboxa_vid_pid_entry.bind("<KeyRelease>", self._on_kmboxa_vid_pid_changed)
+            self.kmboxa_vid_pid_entry.bind("<FocusOut>", self._on_kmboxa_vid_pid_changed)
+
+            btn_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            btn_frame.pack(fill="x", pady=8)
+            self._add_text_button(btn_frame, "CONNECT KMBOXA", lambda: self._connect_mouse_api("KmboxA")).pack(side="left")
+            self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            return
+
         # Net API controls
         dll_name = "kmNet.pyd"
         try:
@@ -949,6 +1001,8 @@ class ViewerApp(ctk.CTk):
         mode_norm = str(val).strip().lower()
         if mode_norm == "net":
             self.saved_mouse_api = "Net"
+        elif mode_norm in ("kmboxa", "kmboxa_api", "kmboxaapi", "kma", "kmboxa-api"):
+            self.saved_mouse_api = "KmboxA"
         elif mode_norm == "dhz":
             self.saved_mouse_api = "DHZ"
         elif mode_norm in ("makv2binary", "makv2_binary", "makv2-binary", "binary"):
@@ -1032,6 +1086,12 @@ class ViewerApp(ctk.CTk):
             config.net_uuid = val
             config.net_mac = val
 
+    def _on_kmboxa_vid_pid_changed(self, event=None):
+        if hasattr(self, "kmboxa_vid_pid_entry") and self.kmboxa_vid_pid_entry.winfo_exists():
+            val = self.kmboxa_vid_pid_entry.get().strip()
+            self.saved_kmboxa_vid_pid = val
+            config.kmboxa_vid_pid = val
+
     def _on_makv2_port_changed(self, event=None):
         if hasattr(self, "makv2_port_entry") and self.makv2_port_entry.winfo_exists():
             val = self.makv2_port_entry.get().strip()
@@ -1091,6 +1151,8 @@ class ViewerApp(ctk.CTk):
         mode_norm = str(mode).strip().lower()
         if mode_norm == "net":
             mode = "Net"
+        elif mode_norm in ("kmboxa", "kmboxa_api", "kmboxaapi", "kma", "kmboxa-api"):
+            mode = "KmboxA"
         elif mode_norm == "dhz":
             mode = "DHZ"
         elif mode_norm in ("makv2", "mak_v2", "mak-v2"):
@@ -1152,6 +1214,13 @@ class ViewerApp(ctk.CTk):
                 "ip": self.saved_net_ip,
                 "port": self.saved_net_port,
                 "uuid": self.saved_net_uuid,
+            })
+        elif mode == "KmboxA":
+            if hasattr(self, "kmboxa_vid_pid_entry") and self.kmboxa_vid_pid_entry.winfo_exists():
+                self.saved_kmboxa_vid_pid = self.kmboxa_vid_pid_entry.get().strip()
+            config.kmboxa_vid_pid = self.saved_kmboxa_vid_pid
+            payload.update({
+                "kmboxa_vid_pid": self.saved_kmboxa_vid_pid,
             })
 
         elif mode == "MakV2":
@@ -1219,6 +1288,11 @@ class ViewerApp(ctk.CTk):
                     port=payload.get("port", ""),
                     uuid=payload.get("uuid", ""),
                 )
+            elif mode == "KmboxA":
+                success, error = switch_backend(
+                    "KmboxA",
+                    kmboxa_vid_pid=payload.get("kmboxa_vid_pid", ""),
+                )
             elif mode == "Arduino":
                 success, error = switch_backend(
                     "Arduino",
@@ -1260,6 +1334,8 @@ class ViewerApp(ctk.CTk):
         if success:
             if mode == "Net":
                 self._set_status_indicator("Status: Mouse API connected (Net)", COLOR_TEXT)
+            elif mode == "KmboxA":
+                self._set_status_indicator("Status: Mouse API connected (KmboxA)", COLOR_TEXT)
             elif mode == "Arduino":
                 self._set_status_indicator("Status: Mouse API connected (Arduino)", COLOR_TEXT)
             elif mode == "SendInput":
@@ -3791,6 +3867,8 @@ class ViewerApp(ctk.CTk):
         mode_norm = str(mode).strip().lower()
         if mode_norm == "net":
             return "Net"
+        if mode_norm in ("kmboxa", "kmboxa_api", "kmboxaapi", "kma", "kmboxa-api"):
+            return "KmboxA"
         if mode_norm == "dhz":
             return "DHZ"
         if mode_norm in ("makv2", "mak_v2", "mak-v2"):
@@ -3827,9 +3905,11 @@ class ViewerApp(ctk.CTk):
         mouse_backend = None
         mouse_state = None
         net_api_module = None
+        kmboxa_api_module = None
         try:
             from src.utils import mouse as mouse_backend
             from src.utils.mouse import NetAPI as net_api_module
+            from src.utils.mouse import KmboxAAPI as kmboxa_api_module
             from src.utils.mouse import state as mouse_state
         except Exception:
             pass
@@ -3858,6 +3938,20 @@ class ViewerApp(ctk.CTk):
                 dhz_client = getattr(mouse_state, "dhz_client", None)
                 if dhz_client is not None and hasattr(dhz_client, "addr"):
                     details.append(f"Active Target: {dhz_client.addr[0]}:{dhz_client.addr[1]}")
+            except Exception:
+                pass
+        elif mode == "KmboxA":
+            vid_pid = str(getattr(config, "kmboxa_vid_pid", "")).strip()
+            vid = int(getattr(config, "kmboxa_vid", 0))
+            pid = int(getattr(config, "kmboxa_pid", 0))
+            details.append(f"VID/PID Input: {vid_pid or '(empty)'}")
+            details.append(f"VID/PID Parsed: {vid}/{pid}")
+            try:
+                if mouse_backend is not None:
+                    details.append(f"DLL: {mouse_backend.get_expected_kmboxa_dll_name()}")
+                loaded_path = getattr(kmboxa_api_module, "_loaded_module_path", "")
+                if loaded_path:
+                    details.append(f"Loaded: {os.path.basename(loaded_path)}")
             except Exception:
                 pass
         elif mode == "MakV2":

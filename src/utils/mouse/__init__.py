@@ -1,7 +1,7 @@
-
+import re
 from src.utils.debug_logger import log_click, log_press, log_release, log_print
 
-from . import ArduinoAPI, DHZAPI, MakV2, MakV2Binary, NetAPI, SendInputAPI, SerialAPI, state
+from . import ArduinoAPI, DHZAPI, KmboxAAPI, MakV2, MakV2Binary, NetAPI, SendInputAPI, SerialAPI, state
 
 is_connected = False
 
@@ -15,6 +15,8 @@ def _normalize_api_name(mode: str) -> str:
     mode_norm = str(mode).strip().lower()
     if mode_norm == "net":
         return "Net"
+    if mode_norm in ("kmboxa", "kmboxa_api", "kmboxaapi", "kma", "kmboxa-api"):
+        return "KmboxA"
     if mode_norm == "dhz":
         return "DHZ"
     if mode_norm in ("makv2binary", "makv2_binary", "makv2-binary", "binary"):
@@ -88,6 +90,96 @@ def _get_makv2_settings(port=None, baud=None):
     return selected_port, selected_baud
 
 
+def parse_kmboxa_vid_pid(value, default_vid=0, default_pid=0, strict: bool = False):
+    def _parse_int_token(token, fallback=None):
+        try:
+            token_str = str(token).strip()
+            if token_str.lower().startswith("v"):
+                token_str = token_str[1:].strip()
+            if token_str.lower().startswith("d:"):
+                return int(token_str[2:].strip(), 10)
+            if token_str.lower().startswith("h:"):
+                return int(token_str[2:].strip(), 16)
+            if token_str.lower().startswith("0x"):
+                return int(token_str, 16)
+            if token_str.isdigit() and len(token_str) == 4:
+                # kmboxA docs/common tooling use 4-char hex blocks without 0x,
+                # e.g. 6688 / 2021.
+                return int(token_str, 16)
+            if re.search(r"[a-f]", token_str, flags=re.IGNORECASE):
+                return int(token_str, 16)
+            if isinstance(token, str):
+                return int(token_str, 10)
+            return int(token)
+        except Exception:
+            return fallback
+
+    raw = str(value if value is not None else "").strip()
+    is_v_prefixed = raw.lower().startswith("v")
+    text = raw
+    if is_v_prefixed:
+        text = text[1:].strip()
+    if not text:
+        if strict:
+            raise ValueError("KmboxA VID/PID is empty.")
+        return int(default_vid), int(default_pid)
+
+    if is_v_prefixed and re.fullmatch(r"[0-9a-fA-F]{5,8}", text):
+        return int(text[:4], 16), int(text[4:], 16)
+
+    for sep in ("/", ":", ",", ";", "|", " "):
+        if sep in text:
+            parts = [p for p in text.split(sep) if str(p).strip()]
+            if len(parts) >= 2:
+                vid = _parse_int_token(parts[0], default_vid)
+                pid = _parse_int_token(parts[1], default_pid)
+                if strict and (vid is None or pid is None):
+                    raise ValueError(f"Invalid KmboxA VID/PID format: {raw}")
+                return int(vid), int(pid)
+
+    if text.isdigit() and len(text) == 8:
+        # Official kmboxA style: 66882021 => 0x6688 / 0x2021
+        vid = _parse_int_token(text[:4], default_vid)
+        pid = _parse_int_token(text[4:], default_pid)
+        if strict and (vid is None or pid is None):
+            raise ValueError(f"Invalid KmboxA VID/PID format: {raw}")
+        return int(vid), int(pid)
+
+    packed = _parse_int_token(text, None)
+    if packed is None:
+        if strict:
+            raise ValueError(f"Invalid KmboxA VID/PID format: {raw}")
+        return int(default_vid), int(default_pid)
+    if int(packed) > 0xFFFF:
+        return int((int(packed) >> 16) & 0xFFFF), int(int(packed) & 0xFFFF)
+    return int(packed), int(default_pid)
+
+
+def format_kmboxa_vid_pid(vid: int, pid: int) -> str:
+    return f"{int(vid)}/{int(pid)}"
+
+
+def _get_kmboxa_settings(vid=None, pid=None, vid_pid=None):
+    cfg_vid, cfg_pid, cfg_vid_pid = 0, 0, ""
+    try:
+        from src.utils.config import config
+
+        cfg_vid = int(getattr(config, "kmboxa_vid", cfg_vid))
+        cfg_pid = int(getattr(config, "kmboxa_pid", cfg_pid))
+        cfg_vid_pid = str(getattr(config, "kmboxa_vid_pid", cfg_vid_pid))
+    except Exception:
+        pass
+
+    if vid is not None or pid is not None:
+        selected_vid = int(vid if vid is not None else cfg_vid)
+        selected_pid = int(pid if pid is not None else cfg_pid)
+        return selected_vid, selected_pid
+
+    source = vid_pid if vid_pid is not None else cfg_vid_pid
+    selected_vid, selected_pid = parse_kmboxa_vid_pid(source, default_vid=cfg_vid, default_pid=cfg_pid)
+    return selected_vid, selected_pid
+
+
 def _get_makv2binary_settings(port=None, baud=None):
     cfg_port, cfg_baud = "", 4_000_000
     try:
@@ -140,6 +232,7 @@ def _disconnect_all_backends():
     ArduinoAPI.disconnect()
     SendInputAPI.disconnect()
     NetAPI.disconnect()
+    KmboxAAPI.disconnect()
     DHZAPI.disconnect()
     MakV2.disconnect()
     MakV2Binary.disconnect()
@@ -164,6 +257,10 @@ def get_expected_kmnet_dll_name() -> str:
     return NetAPI.get_expected_kmnet_dll_name()
 
 
+def get_expected_kmboxa_dll_name() -> str:
+    return KmboxAAPI.get_expected_kmboxa_dll_name()
+
+
 def connect_to_serial(mode=None, port=None) -> bool:
     selected_mode, selected_port = _get_serial_settings(mode=mode, port=port)
     if selected_mode == "Manual" and not selected_port:
@@ -180,6 +277,13 @@ def connect_to_serial(mode=None, port=None) -> bool:
 def connect_to_net(ip=None, port=None, uuid=None, mac=None) -> bool:
     ip, port, uuid = _get_net_settings(ip=ip, port=port, uuid=uuid, mac=mac)
     ok = NetAPI.connect(ip=ip, port=port, uuid=uuid)
+    _sync_public_state()
+    return ok
+
+
+def connect_to_kmboxa(vid=None, pid=None, vid_pid=None) -> bool:
+    vid, pid = _get_kmboxa_settings(vid=vid, pid=pid, vid_pid=vid_pid)
+    ok = KmboxAAPI.connect(vid=vid, pid=pid)
     _sync_public_state()
     return ok
 
@@ -226,6 +330,8 @@ def connect_to_makcu():
     mode = _get_selected_backend_from_config()
     if mode == "Net":
         return connect_to_net()
+    if mode == "KmboxA":
+        return connect_to_kmboxa()
     if mode == "DHZ":
         return connect_to_dhz()
     if mode == "MakV2Binary":
@@ -249,6 +355,9 @@ def switch_backend(
     port=None,
     uuid=None,
     mac=None,
+    kmboxa_vid=None,
+    kmboxa_pid=None,
+    kmboxa_vid_pid=None,
     makv2_port=None,
     makv2_baud=None,
     makv2binary_port=None,
@@ -260,6 +369,17 @@ def switch_backend(
     target_mode = _normalize_api_name(mode)
     if uuid is None and mac is not None:
         uuid = mac
+    parsed_kmboxa_vid = None
+    parsed_kmboxa_pid = None
+    if kmboxa_vid_pid is not None:
+        try:
+            parsed_kmboxa_vid, parsed_kmboxa_pid = parse_kmboxa_vid_pid(
+                kmboxa_vid_pid,
+                strict=True,
+            )
+        except ValueError as e:
+            state.last_connect_error = str(e)
+            return False, state.last_connect_error
 
     try:
         from src.utils.config import config
@@ -281,6 +401,17 @@ def switch_backend(
         if uuid is not None:
             config.net_uuid = str(uuid)
             config.net_mac = str(uuid)
+        if kmboxa_vid_pid is not None:
+            config.kmboxa_vid = int(parsed_kmboxa_vid)
+            config.kmboxa_pid = int(parsed_kmboxa_pid)
+            config.kmboxa_vid_pid = format_kmboxa_vid_pid(parsed_kmboxa_vid, parsed_kmboxa_pid)
+        else:
+            if kmboxa_vid is not None:
+                config.kmboxa_vid = int(kmboxa_vid)
+            if kmboxa_pid is not None:
+                config.kmboxa_pid = int(kmboxa_pid)
+            if kmboxa_vid is not None or kmboxa_pid is not None:
+                config.kmboxa_vid_pid = format_kmboxa_vid_pid(config.kmboxa_vid, config.kmboxa_pid)
         if makv2_port is not None:
             config.makv2_port = str(makv2_port)
         if makv2_baud is not None:
@@ -304,6 +435,10 @@ def switch_backend(
     if target_mode == "Net":
         ok = connect_to_net(ip=ip, port=port, uuid=uuid, mac=mac)
         return ok, (None if ok else (state.last_connect_error or "Net backend connect failed"))
+
+    if target_mode == "KmboxA":
+        ok = connect_to_kmboxa(vid=kmboxa_vid, pid=kmboxa_pid, vid_pid=kmboxa_vid_pid)
+        return ok, (None if ok else (state.last_connect_error or "KmboxA backend connect failed"))
 
     if target_mode == "MakV2Binary":
         ok = connect_to_makv2binary(port=makv2binary_port, baud=makv2binary_baud)
@@ -340,6 +475,8 @@ def is_button_pressed(idx: int) -> bool:
 
     if state.active_backend == "Net":
         return NetAPI.is_button_pressed(idx)
+    if state.active_backend == "KmboxA":
+        return KmboxAAPI.is_button_pressed(idx)
     if state.active_backend == "DHZ":
         return DHZAPI.is_button_pressed(idx)
     if state.active_backend == "MakV2Binary":
@@ -362,6 +499,8 @@ def switch_to_4m():
 def test_move():
     if state.active_backend == "Net":
         NetAPI.move(100, 100)
+    elif state.active_backend == "KmboxA":
+        KmboxAAPI.move(100, 100)
     elif state.active_backend == "DHZ":
         DHZAPI.move(100, 100)
     elif state.active_backend == "MakV2Binary":
@@ -487,6 +626,8 @@ class Mouse:
             return
         if state.active_backend == "Net":
             NetAPI.move(x, y)
+        elif state.active_backend == "KmboxA":
+            KmboxAAPI.move(x, y)
         elif state.active_backend == "DHZ":
             DHZAPI.move(x, y)
         elif state.active_backend == "MakV2Binary":
@@ -505,6 +646,8 @@ class Mouse:
             return
         if state.active_backend == "Net":
             NetAPI.move_bezier(x, y, segments, ctrl_x, ctrl_y)
+        elif state.active_backend == "KmboxA":
+            KmboxAAPI.move_bezier(x, y, segments, ctrl_x, ctrl_y)
         elif state.active_backend == "DHZ":
             DHZAPI.move_bezier(x, y, segments, ctrl_x, ctrl_y)
         elif state.active_backend == "MakV2Binary":
@@ -524,6 +667,9 @@ class Mouse:
         if state.active_backend == "Net":
             NetAPI.left(1)
             NetAPI.left(0)
+        elif state.active_backend == "KmboxA":
+            KmboxAAPI.left(1)
+            KmboxAAPI.left(0)
         elif state.active_backend == "DHZ":
             DHZAPI.left(1)
             DHZAPI.left(0)
@@ -549,6 +695,8 @@ class Mouse:
             return
         if state.active_backend == "Net":
             NetAPI.left(1)
+        elif state.active_backend == "KmboxA":
+            KmboxAAPI.left(1)
         elif state.active_backend == "DHZ":
             DHZAPI.left(1)
         elif state.active_backend == "MakV2Binary":
@@ -568,6 +716,8 @@ class Mouse:
             return
         if state.active_backend == "Net":
             NetAPI.left(0)
+        elif state.active_backend == "KmboxA":
+            KmboxAAPI.left(0)
         elif state.active_backend == "DHZ":
             DHZAPI.left(0)
         elif state.active_backend == "MakV2Binary":
