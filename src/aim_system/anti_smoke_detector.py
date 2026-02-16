@@ -5,6 +5,7 @@ Enhanced with shape analysis and time-motion tracking system
 """
 
 from src.utils.debug_logger import log_print
+import cv2
 import numpy as np
 import time
 import importlib
@@ -52,6 +53,17 @@ class AntiSmokeDetector:
         self.max_hedef_mesafe = 30     # Target matching distance
         self.hedef_kayip_suresi = 6    # How many frames until target is considered lost
         self.olu_ikon_suresi = 120     # Dead icon memory time (frames)
+
+        # Lightweight bbox/contour anti-smoke thresholds (scipy-free path)
+        self.bbox_min_area = 48
+        self.bbox_min_contour_area = 12.0
+        self.bbox_min_fill_ratio = 0.08
+        self.bbox_wide_aspect_ratio = 1.7
+        self.bbox_min_solidity = 0.33
+        self.bbox_dense_fill_ratio = 0.78
+        self.bbox_dense_component_max = 2
+        self.bbox_large_area_ratio = 0.08
+        self.bbox_large_fill_ratio = 0.30
         
     def set_enabled(self, enabled):
         """Enable/disable anti-smoke feature"""
@@ -145,6 +157,104 @@ class AntiSmokeDetector:
         if convexity_ratio < self.min_convexity_ratio:
             return False  # Very holey/frayed shape = smoke
         
+        return True
+
+    def is_bbox_plausible(self, bbox, mask, frame_shape):
+        """
+        Lightweight anti-smoke check directly on bbox + mask contour features.
+
+        Args:
+            bbox: Tuple/list (x, y, w, h)
+            mask: Binary mask (single-channel uint8 preferred)
+            frame_shape: Image shape tuple (h, w[, c])
+
+        Returns:
+            bool: True if bbox is likely a real target, False if likely smoke/noise.
+        """
+        if not self.enabled:
+            return True
+        if bbox is None or mask is None or frame_shape is None:
+            return True
+        if len(bbox) < 4:
+            return True
+
+        frame_h = int(frame_shape[0]) if len(frame_shape) >= 1 else 0
+        frame_w = int(frame_shape[1]) if len(frame_shape) >= 2 else 0
+        if frame_h <= 0 or frame_w <= 0:
+            return True
+
+        x, y, w, h = [int(v) for v in bbox[:4]]
+        if w <= 0 or h <= 0:
+            return False
+
+        x1 = max(0, min(x, frame_w - 1))
+        y1 = max(0, min(y, frame_h - 1))
+        x2 = max(x1 + 1, min(x + w, frame_w))
+        y2 = max(y1 + 1, min(y + h, frame_h))
+        bw = x2 - x1
+        bh = y2 - y1
+        bbox_area = float(max(1, bw * bh))
+        if bbox_area < float(self.bbox_min_area):
+            return False
+
+        roi = mask[y1:y2, x1:x2]
+        if roi is None or roi.size == 0:
+            return False
+
+        if len(roi.shape) == 3:
+            roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        if roi.dtype != np.uint8:
+            roi = roi.astype(np.uint8)
+        if cv2.countNonZero(roi) <= 0:
+            return False
+
+        roi_bin = np.ascontiguousarray((roi > 0).astype(np.uint8) * 255)
+        contours, _ = cv2.findContours(roi_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return False
+
+        valid_contours = []
+        for contour in contours:
+            contour_area = float(cv2.contourArea(contour))
+            if contour_area >= float(self.bbox_min_contour_area):
+                valid_contours.append((contour, contour_area))
+
+        if not valid_contours:
+            return False
+
+        component_count = len(valid_contours)
+        largest_contour, contour_area = max(valid_contours, key=lambda item: item[1])
+        fill_ratio = contour_area / bbox_area
+        if fill_ratio < float(self.bbox_min_fill_ratio):
+            return False
+
+        _, _, lw, lh = cv2.boundingRect(largest_contour)
+        if lh <= 0:
+            return False
+        aspect_ratio = float(lw) / float(lh)
+
+        hull = cv2.convexHull(largest_contour)
+        hull_area = float(cv2.contourArea(hull))
+        solidity = contour_area / hull_area if hull_area > 0.0 else 0.0
+
+        frame_area = float(max(1, frame_h * frame_w))
+        bbox_area_ratio = bbox_area / frame_area
+
+        if aspect_ratio >= float(self.bbox_wide_aspect_ratio) and fill_ratio >= 0.16:
+            return False
+        if solidity < float(self.bbox_min_solidity) and fill_ratio >= 0.16:
+            return False
+        if (
+            fill_ratio >= float(self.bbox_dense_fill_ratio)
+            and component_count <= int(self.bbox_dense_component_max)
+        ):
+            return False
+        if (
+            bbox_area_ratio >= float(self.bbox_large_area_ratio)
+            and fill_ratio >= float(self.bbox_large_fill_ratio)
+        ):
+            return False
+
         return True
     
     def _calculate_convexity_ratio(self, cluster):
@@ -473,7 +583,16 @@ class AntiSmokeDetector:
             'min_convexity_ratio': self.min_convexity_ratio,
             'max_hedef_mesafe': self.max_hedef_mesafe,
             'hedef_kayip_suresi': self.hedef_kayip_suresi,
-            'olu_ikon_suresi': self.olu_ikon_suresi
+            'olu_ikon_suresi': self.olu_ikon_suresi,
+            'bbox_min_area': self.bbox_min_area,
+            'bbox_min_contour_area': self.bbox_min_contour_area,
+            'bbox_min_fill_ratio': self.bbox_min_fill_ratio,
+            'bbox_wide_aspect_ratio': self.bbox_wide_aspect_ratio,
+            'bbox_min_solidity': self.bbox_min_solidity,
+            'bbox_dense_fill_ratio': self.bbox_dense_fill_ratio,
+            'bbox_dense_component_max': self.bbox_dense_component_max,
+            'bbox_large_area_ratio': self.bbox_large_area_ratio,
+            'bbox_large_fill_ratio': self.bbox_large_fill_ratio
         }
 
 

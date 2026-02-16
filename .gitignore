@@ -27,6 +27,7 @@ ENV/
 # config.json - now tracked in repository
 configs/*
 !configs/default.json
+docs/
 *.log
 *.tmp
 *.bak

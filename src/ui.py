@@ -542,10 +542,10 @@ class ViewerApp(ctk.CTk):
         
         # 鈹€鈹€ DETECTION PARAMETERS (collapsible) 鈹€鈹€
         detection_tooltip_text = (
-            "鈥?Merge Distance: Controls the distance threshold for merging detection rectangles. "
+            "- Merge Distance: Controls the distance threshold for merging detection rectangles. "
             "Higher values merge more (may cause false merges), lower values merge less (may create multiple targets). "
             "Recommended: 200-300 (default 250)\n\n"
-            "鈥?Min Contour Points: Filters contours with too few points (usually noise). "
+            "- Min Contour Points: Filters contours with too few points (usually noise). "
             "Higher values filter more strictly (may miss small targets), lower values filter more loosely (may include more noise). "
             "Recommended: 3-10 (default 5)"
         )

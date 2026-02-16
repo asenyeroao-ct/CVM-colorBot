@@ -371,6 +371,7 @@ class CaptureService:
                 return None
             
             try:
+                # CaptureCardCamera guarantees BGR output before returning.
                 frame = self.capture_card_camera.get_latest_frame()
                 if frame is None:
                     return None

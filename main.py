@@ -402,6 +402,26 @@ class AimTracker:
         except Exception:
             pass
 
+    def _filter_targets_with_anti_smoke(self, targets, target_bboxes, mask, frame_shape, detector):
+        """Filter targets using nearest bbox contour checks from anti-smoke detector."""
+        if not targets or not target_bboxes or detector is None:
+            return targets
+        if not detector.is_enabled() or mask is None:
+            return targets
+
+        filtered_targets = []
+        for target in targets:
+            if len(target) < 2:
+                continue
+            tx, ty = float(target[0]), float(target[1])
+            nearest_bbox = min(
+                target_bboxes,
+                key=lambda item: (float(item[0][0]) - tx) ** 2 + (float(item[0][1]) - ty) ** 2,
+            )[1]
+            if detector.is_bbox_plausible(nearest_bbox, mask, frame_shape):
+                filtered_targets.append(target)
+        return filtered_targets
+
     def track_once(self):
         """
         鍩疯涓€娆″畬鏁寸殑杩借工铏曠悊
@@ -484,6 +504,7 @@ class AimTracker:
                     pass
 
         targets = []
+        target_bboxes = []
         if detection_results:
             # 鐛插彇鐣跺墠 aim_type锛圡ain Aimbot锛?
             aim_type = getattr(config, "aim_type", "head")
@@ -523,7 +544,9 @@ class AimTracker:
                     if aim_type == "body":
                         # Body 妯″紡锛氫娇鐢?body 涓績榛?
                         d = math.hypot(body_cx - frame.xres / 2.0, body_cy - frame.yres / 2.0)
-                        targets.append((body_cx, body_cy, d, None, None))  # 鏈€寰屽叐鍊嬪弮鏁哥偤 head_y_min, body_y_max锛坆ody 妯″紡涓嶉渶瑕侊級
+                        target_tuple = (body_cx, body_cy, d, None, None)
+                        targets.append(target_tuple)  # 鏈€寰屽叐鍊嬪弮鏁哥偤 head_y_min, body_y_max锛坆ody 妯″紡涓嶉渶瑕侊級
+                        target_bboxes.append(((body_cx, body_cy), (x1, y1, int(w), int(h))))
                     else:
                         # Head 鎴?Nearest 妯″紡锛氫娇鐢?head 浣嶇疆
                         for head_cx, head_cy, bbox in head_positions:
@@ -537,18 +560,32 @@ class AimTracker:
                             head_y_min = head_cy - estimated_head_height // 2  # head 鏈€楂?Y 鍊?                            
                             if aim_type == "nearest":
                                 # Nearest 妯″紡锛氫繚瀛?Y 绡勫湇淇℃伅
-                                targets.append((head_cx, head_cy, d, head_y_min, body_y_max))
+                                target_tuple = (head_cx, head_cy, d, head_y_min, body_y_max)
                             else:  # head 妯″紡
-                                targets.append((head_cx, head_cy, d, None, None))
+                                target_tuple = (head_cx, head_cy, d, None, None)
+                            targets.append(target_tuple)
+                            target_bboxes.append(((head_cx, head_cy), (x1, y1, int(w), int(h))))
                 except Exception as e:
                     print("Erreur dans _estimate_head_positions:", e)
 
+        targets_all = targets
         use_temporal_smoothing = bool(getattr(config, "enable_target_temporal_smoothing", False))
-        if targets and use_temporal_smoothing:
-            targets = self._target_smoother.stabilize(targets, frame.xres / 2.0, frame.yres / 2.0)
+        if targets_all and use_temporal_smoothing:
+            targets_all = self._target_smoother.stabilize(targets_all, frame.xres / 2.0, frame.yres / 2.0)
             self.last_target = self._target_smoother.last_target
             self.stable_candidate = self._target_smoother.stable_candidate
             self.stable_count = self._target_smoother.stable_count
+
+        targets_main = list(targets_all)
+        targets_sec = list(targets_all)
+        if targets_all and target_bboxes:
+            frame_shape = bgr_img.shape
+            targets_main = self._filter_targets_with_anti_smoke(
+                targets_all, target_bboxes, mask, frame_shape, self.anti_smoke_detector
+            )
+            targets_sec = self._filter_targets_with_anti_smoke(
+                targets_all, target_bboxes, mask, frame_shape, self.anti_smoke_detector_sec
+            )
 
         # FOVs une fois par frame
         try:
@@ -557,7 +594,13 @@ class AimTracker:
             pass
 
         try:
-            self._aim_and_move(targets, frame, bgr_img)
+            self._aim_and_move(
+                targets_main,
+                frame,
+                bgr_img,
+                targets_sec=targets_sec,
+                targets_trigger=targets_all,
+            )
         except Exception as e:
             print("[Aim error]", e)
 
@@ -566,7 +609,7 @@ class AimTracker:
             getattr(config, "show_opencv_detection", True)):
             try:
                 # 鍎寲绻＝锛氭坊鍔犳洿澶氳瑕轰俊鎭?
-                display_img = self._draw_enhanced_detection(bgr_img.copy(), targets, frame)
+                display_img = self._draw_enhanced_detection(bgr_img.copy(), targets_all, frame)
                 cv2.imshow("Detection", display_img)
                 cv2.waitKey(1)
             except Exception as e:
@@ -861,17 +904,26 @@ class AimTracker:
         cv2.putText(img, label_text, (int(x1) + 5, int(y1) - 5), 
                    font, font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
 
-    def _aim_and_move(self, targets, frame, img):
+    def _aim_and_move(self, targets_main, frame, img, targets_sec=None, targets_trigger=None):
         """
         铏曠悊鐬勬簴鍜岀Щ鍕曢倧杓?        
         绲变竴瑾垮害鍣細Main Aimbot 鍜?Sec Aimbot 鍚勮嚜浣跨敤鐛ㄧ珛鐨?Operation Mode銆?        鏀寔 Normal銆丼ilent銆丯CAF銆乄indMouse 鍥涚ó妯″紡銆?        
         Args:
-            targets: 鐩鍒楄〃锛屾瘡鍊嬪厓绱犵偤 (cx, cy, distance) 鍏冪祫
+            targets_main: Main Aimbot target list
             frame: 瑕栭牷骞€鐗╀欢
             img: BGR 鍦栧儚闄ｅ垪
+            targets_sec: Secondary Aimbot target list
+            targets_trigger: Triggerbot target list
         """
         try:
-            process_normal_mode(targets, frame, img, self)
+            process_normal_mode(
+                targets_main,
+                frame,
+                img,
+                self,
+                targets_sec=targets_sec,
+                targets_trigger=targets_trigger,
+            )
         except Exception as e:
             print("[Aim dispatch error]", e)
 

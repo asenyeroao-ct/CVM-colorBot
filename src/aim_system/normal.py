@@ -621,19 +621,35 @@ def _dispatch_aimbot(dx, dy, distance_to_center, mode, tracker, is_sec=False):
         # 預設使用 Normal
         _apply_normal_aim(dx, dy, distance_to_center, tracker, is_sec)
 
+def _unpack_target(target):
+    """Unpack target tuple while keeping backward compatibility."""
+    if not target or len(target) < 3:
+        return None, None, None, None, None
+    cx, cy, distance = target[:3]
+    head_y_min = target[3] if len(target) >= 4 else None
+    body_y_max = target[4] if len(target) >= 5 else None
+    return cx, cy, distance, head_y_min, body_y_max
 
-def process_normal_mode(targets, frame, img, tracker):
+
+def process_normal_mode(targets_main, frame, img, tracker, targets_sec=None, targets_trigger=None):
     """
     主瞄準調度器（Main Aimbot + Sec Aimbot + Triggerbot）
     Main Aimbot 和 Sec Aimbot 各自使用獨立的 Operation Mode
     優先級：Main Aimbot > Sec Aimbot
     
     Args:
-        targets: 目標列表 [(cx, cy, distance, head_y_min, body_y_max), ...]
+        targets_main: 主自瞄目標列表 [(cx, cy, distance, head_y_min, body_y_max), ...]
         frame: 視頻幀物件
         img: BGR 圖像
         tracker: AimTracker 實例
+        targets_sec: 副自瞄目標列表（None 時回退為 targets_main）
+        targets_trigger: Triggerbot 目標列表（None 時回退為 targets_main）
     """
+    if targets_sec is None:
+        targets_sec = targets_main
+    if targets_trigger is None:
+        targets_trigger = targets_main
+
     # Main Aimbot 配置
     aim_enabled = getattr(config, "enableaim", False)
     selected_btn = getattr(config, "selected_mouse_button", None)
@@ -662,55 +678,54 @@ def process_normal_mode(targets, frame, img, tracker):
     )
     
     # 處理 Aimbot（優先級：Main > Sec）
-    if targets:
-        # 選擇最佳目標
-        best_target = min(targets, key=lambda t: t[2])
-        # targets 結構: (cx, cy, distance, head_y_min, body_y_max)
-        if len(best_target) >= 5:
-            cx, cy, _, head_y_min, body_y_max = best_target
-        else:
-            cx, cy, _ = best_target[:3]
-            head_y_min, body_y_max = None, None
-        
-        distance_to_center = math.hypot(cx - center_x, cy - center_y)
-        
-        # === 優先處理 Main Aimbot ===
-        main_fov = float(getattr(config, 'fovsize', tracker.fovsize))
-        if distance_to_center <= main_fov:
-            if aim_enabled and selected_btn is not None and check_aimbot_activation(selected_btn, activation_type, is_sec=False):
-                try:
-                    aim_type = getattr(config, "aim_type", "head")
-                    aim_offsetX = float(getattr(config, "aim_offsetX", tracker.aim_offsetX))
-                    aim_offsetY = float(getattr(config, "aim_offsetY", tracker.aim_offsetY))
-                    
-                    dx = (cx + aim_offsetX) - center_x
-                    dy = (cy + aim_offsetY) - center_y
-                    
-                    # Nearest 模式
-                    if aim_type == "nearest" and head_y_min is not None and body_y_max is not None:
-                        if head_y_min < body_y_max:
-                            target_y = cy + aim_offsetY
-                            if head_y_min <= target_y <= body_y_max:
-                                dy = 0
-                    
-                    # RCS 整合
-                    if rcs_active:
-                        dy = 0
-                    
-                    # Y 軸解鎖功能（左鍵按下時解鎖 Y 軸控制）
-                    if check_y_release():
-                        dy = 0
-                    
-                    # 根據 Main 模式調度
-                    _dispatch_aimbot(dx, dy, distance_to_center, mode_main, tracker, is_sec=False)
-                    main_aimbot_active = True
-                except Exception as e:
-                    log_print(f"[Main Aimbot error] {e}")
-        
-        # === 如果 Main Aimbot 未啟動，嘗試 Sec Aimbot ===
-        if not main_aimbot_active:
+    best_target_main = min(targets_main, key=lambda t: t[2]) if targets_main else None
+    best_target_sec = min(targets_sec, key=lambda t: t[2]) if targets_sec else None
+
+    if best_target_main:
+        cx, cy, _, head_y_min, body_y_max = _unpack_target(best_target_main)
+        if cx is not None and cy is not None:
+            distance_to_center = math.hypot(cx - center_x, cy - center_y)
+
+            # === 優先處理 Main Aimbot ===
+            main_fov = float(getattr(config, 'fovsize', tracker.fovsize))
+            if distance_to_center <= main_fov:
+                if aim_enabled and selected_btn is not None and check_aimbot_activation(selected_btn, activation_type, is_sec=False):
+                    try:
+                        aim_type = getattr(config, "aim_type", "head")
+                        aim_offsetX = float(getattr(config, "aim_offsetX", tracker.aim_offsetX))
+                        aim_offsetY = float(getattr(config, "aim_offsetY", tracker.aim_offsetY))
+                        
+                        dx = (cx + aim_offsetX) - center_x
+                        dy = (cy + aim_offsetY) - center_y
+                        
+                        # Nearest 模式
+                        if aim_type == "nearest" and head_y_min is not None and body_y_max is not None:
+                            if head_y_min < body_y_max:
+                                target_y = cy + aim_offsetY
+                                if head_y_min <= target_y <= body_y_max:
+                                    dy = 0
+                        
+                        # RCS 整合
+                        if rcs_active:
+                            dy = 0
+                        
+                        # Y 軸解鎖功能（左鍵按下時解鎖 Y 軸控制）
+                        if check_y_release():
+                            dy = 0
+                        
+                        # 根據 Main 模式調度
+                        _dispatch_aimbot(dx, dy, distance_to_center, mode_main, tracker, is_sec=False)
+                        main_aimbot_active = True
+                    except Exception as e:
+                        log_print(f"[Main Aimbot error] {e}")
+    
+    # === 如果 Main Aimbot 未啟動，嘗試 Sec Aimbot ===
+    if not main_aimbot_active and best_target_sec:
+        cx, cy, _, head_y_min, body_y_max = _unpack_target(best_target_sec)
+        if cx is not None and cy is not None:
+            distance_to_center_sec = math.hypot(cx - center_x, cy - center_y)
             sec_fov = float(getattr(config, 'fovsize_sec', tracker.fovsize_sec))
-            if distance_to_center <= sec_fov:
+            if distance_to_center_sec <= sec_fov:
                 if aim_enabled_sec and selected_btn_sec is not None and check_aimbot_activation(selected_btn_sec, activation_type_sec, is_sec=True):
                     try:
                         aim_type_sec = getattr(config, "aim_type_sec", "head")
@@ -736,7 +751,7 @@ def process_normal_mode(targets, frame, img, tracker):
                             dy = 0
                         
                         # 根據 Sec 模式調度
-                        _dispatch_aimbot(dx, dy, distance_to_center, mode_sec, tracker, is_sec=True)
+                        _dispatch_aimbot(dx, dy, distance_to_center_sec, mode_sec, tracker, is_sec=True)
                     except Exception as e:
                         log_print(f"[Sec Aimbot error] {e}")
     
@@ -749,7 +764,7 @@ def process_normal_mode(targets, frame, img, tracker):
             tracker.tbcooldown_min, tracker.tbcooldown_max,
             tracker.tbburst_count_min, tracker.tbburst_count_max,
             tracker.tbburst_interval_min, tracker.tbburst_interval_max,
-            targets=targets,
+            targets=targets_trigger,
         )
     except Exception as e:
         log_print("[Triggerbot error]", e)

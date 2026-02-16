@@ -238,6 +238,10 @@ class Config:
         self.capture_height = 1080
         self.capture_fps = 240
         self.capture_fourcc_preference = ["NV12", "YUY2", "MJPG"]
+        self.capture_card_force_bgr = True
+        self.capture_card_set_convert_rgb = True
+        self.capture_card_probe_frames = 3
+        self.capture_card_debug_color_log = False
         self.capture_range_x = 128  # 鏈€浣庡€?128
         self.capture_range_y = 128  # 鏈€浣庡€?128
         self.capture_offset_x = 0
@@ -481,6 +485,10 @@ class Config:
             "capture_height": self.capture_height,
             "capture_fps": self.capture_fps,
             "capture_fourcc_preference": self.capture_fourcc_preference,
+            "capture_card_force_bgr": self.capture_card_force_bgr,
+            "capture_card_set_convert_rgb": self.capture_card_set_convert_rgb,
+            "capture_card_probe_frames": self.capture_card_probe_frames,
+            "capture_card_debug_color_log": self.capture_card_debug_color_log,
             "capture_range_x": self.capture_range_x,
             "capture_range_y": self.capture_range_y,
             "capture_offset_x": self.capture_offset_x,
