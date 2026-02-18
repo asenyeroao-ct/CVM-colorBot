@@ -17,6 +17,7 @@ from src.capture.capture_service import CaptureService
 from src.utils.mouse_input import MouseInputMonitor
 from src.utils.debug_logger import get_recent_logs, clear_logs, get_log_count, log_print
 from src.utils.updater import get_update_checker
+from src.ui_hsv_preview import HsvPreviewWindow
 
 # --- 棰ㄦ牸閰嶇疆 (Ultra Minimalist) ---
 COLOR_BG = "#121212"          # 绲变竴娣辩伆鑳屾櫙
@@ -566,6 +567,23 @@ class ViewerApp(ctk.CTk):
                                   lambda v: self._on_custom_hsv_changed("custom_hsv_max_v", v))
         
         # 鏍规摎鐣跺墠閬告搰椤ず/闅辫棌 Custom HSV 鍗€濉?
+
+        self._add_spacer_in_frame(self.custom_hsv_section)
+
+        # Botao para abrir o preview HSV
+        ctk.CTkButton(
+            self.custom_hsv_section,
+            text="Abrir Preview HSV",
+            height=30,
+            fg_color=COLOR_SURFACE,
+            hover_color=COLOR_BORDER,
+            text_color=COLOR_ACCENT,
+            font=FONT_BOLD,
+            corner_radius=4,
+            border_width=1,
+            border_color=COLOR_BORDER,
+            command=self._open_hsv_preview,
+        ).pack(fill="x", pady=(0, 6))
         self._update_custom_hsv_visibility()
         
         # 鈹€鈹€ DETECTION PARAMETERS (collapsible) 鈹€鈹€
@@ -4652,6 +4670,41 @@ class ViewerApp(ctk.CTk):
                 self.tracker.model, self.tracker.class_names = reload_model()
                 log_print(f"[UI] Custom HSV updated: {key} = {int(val)}")
     
+    def _open_hsv_preview(self):
+        """Abre a janela de preview HSV em tempo real."""
+        if hasattr(self, '_hsv_preview_window') and self._hsv_preview_window is not None:
+            try:
+                if self._hsv_preview_window.winfo_exists():
+                    self._hsv_preview_window.lift()
+                    self._hsv_preview_window.focus_force()
+                    return
+            except Exception:
+                pass
+
+        def _on_apply():
+            # Recarrega o modelo de detecao com os novos valores
+            if getattr(config, 'color', 'yellow') == 'custom':
+                from src.utils.detection import reload_model
+                if hasattr(self, 'tracker'):
+                    self.tracker.model, self.tracker.class_names = reload_model()
+                    log_print('[UI] Custom HSV aplicado via Preview.')
+            # Atualiza os sliders da UI principal
+            self._sync_hsv_sliders_from_config()
+
+        self._hsv_preview_window = HsvPreviewWindow(
+            self, self.capture, on_apply_callback=_on_apply
+        )
+
+    def _sync_hsv_sliders_from_config(self):
+        """Atualiza os sliders HSV da UI principal a partir do config."""
+        keys = [
+            ('custom_hsv_min_h', 0), ('custom_hsv_min_s', 0), ('custom_hsv_min_v', 0),
+            ('custom_hsv_max_h', 179), ('custom_hsv_max_s', 255), ('custom_hsv_max_v', 255),
+        ]
+        for key, default in keys:
+            val = int(getattr(config, key, default))
+            self._set_slider_value(key, val)
+
     def _on_detection_merge_distance_changed(self, val):
         """Detection Merge Distance 鏀硅畩鏅傜殑鍥炶"""
         config.detection_merge_distance = int(val)
