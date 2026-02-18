@@ -115,6 +115,7 @@ class ViewerApp(ctk.CTk):
         )
         self.saved_serial_port_mode = str(getattr(config, "serial_port_mode", "Auto"))
         self.saved_serial_port = str(getattr(config, "serial_port", ""))
+        self.saved_serial_auto_switch_4m = bool(getattr(config, "serial_auto_switch_4m", False))
         self.saved_arduino_port = str(getattr(config, "arduino_port", ""))
         self.saved_arduino_baud = str(getattr(config, "arduino_baud", 115200))
         self.saved_makv2_port = getattr(config, "makv2_port", "")
@@ -126,6 +127,7 @@ class ViewerApp(ctk.CTk):
         self._mouse_api_connecting = False
         self._mouse_api_connect_job_id = 0
         self._mouse_api_connect_timeout_ms = 12000
+        self._serial_baud_switching = False
         
         # --- 妲嬪缓鐣岄潰 ---
         self._build_layout()
@@ -463,6 +465,9 @@ class ViewerApp(ctk.CTk):
         serial_mode = str(getattr(config, "serial_port_mode", self.saved_serial_port_mode)).strip().lower()
         self.saved_serial_port_mode = "Manual" if serial_mode == "manual" else "Auto"
         self.saved_serial_port = str(getattr(config, "serial_port", self.saved_serial_port))
+        self.saved_serial_auto_switch_4m = bool(
+            getattr(config, "serial_auto_switch_4m", self.saved_serial_auto_switch_4m)
+        )
         self.saved_net_ip = getattr(config, "net_ip", self.saved_net_ip)
         self.saved_net_port = getattr(config, "net_port", self.saved_net_port)
         self.saved_net_uuid = getattr(config, "net_uuid", getattr(config, "net_mac", self.saved_net_uuid))
@@ -772,10 +777,19 @@ class ViewerApp(ctk.CTk):
                 self.serial_port_entry.bind("<KeyRelease>", self._on_serial_port_changed)
                 self.serial_port_entry.bind("<FocusOut>", self._on_serial_port_changed)
 
+            self.var_serial_auto_switch_4m = tk.BooleanVar(value=bool(self.saved_serial_auto_switch_4m))
+            self._add_switch_in_frame(
+                self.hardware_content_frame,
+                "Auto Switch Serial to 4M On Startup",
+                self.var_serial_auto_switch_4m,
+                self._on_serial_auto_switch_4m_changed,
+            )
+
             btn_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=5)
             self._add_text_button(btn_frame, "CONNECT SERIAL", lambda: self._connect_mouse_api("Serial")).pack(side="left")
             self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_text_button(btn_frame, "SWITCH TO 4M", self._switch_serial_to_4m).pack(side="left")
             return
 
         if mode == "Arduino":
@@ -1028,6 +1042,9 @@ class ViewerApp(ctk.CTk):
             self.saved_mouse_api = "Serial"
         config.mouse_api = self.saved_mouse_api
         self.saved_auto_connect_mouse_api = bool(getattr(config, "auto_connect_mouse_api", self.saved_auto_connect_mouse_api))
+        self.saved_serial_auto_switch_4m = bool(
+            getattr(config, "serial_auto_switch_4m", self.saved_serial_auto_switch_4m)
+        )
         # Cancel any in-flight connect request to avoid stale success callback after mode switch.
         self._mouse_api_connect_job_id += 1
         self._mouse_api_connecting = False
@@ -1046,6 +1063,15 @@ class ViewerApp(ctk.CTk):
         val = bool(self.var_auto_connect_mouse_api.get())
         self.saved_auto_connect_mouse_api = val
         config.auto_connect_mouse_api = val
+        try:
+            config.save_to_file()
+        except Exception:
+            pass
+
+    def _on_serial_auto_switch_4m_changed(self):
+        val = bool(self.var_serial_auto_switch_4m.get())
+        self.saved_serial_auto_switch_4m = val
+        config.serial_auto_switch_4m = val
         try:
             config.save_to_file()
         except Exception:
@@ -1153,9 +1179,48 @@ class ViewerApp(ctk.CTk):
         except Exception as e:
             self._set_status_indicator(f"Status: Mouse API test error: {e}", COLOR_DANGER)
 
+    def _switch_serial_to_4m(self):
+        if getattr(self, "_mouse_api_connecting", False):
+            self._set_status_indicator("Status: HW connecting...", COLOR_TEXT_DIM)
+            return
+        if getattr(self, "_serial_baud_switching", False):
+            self._set_status_indicator("Status: Serial baud switching...", COLOR_TEXT_DIM)
+            return
+
+        self._serial_baud_switching = True
+        self._set_status_indicator("Status: Switching Serial to 4M", COLOR_TEXT_DIM)
+        threading.Thread(target=self._switch_serial_to_4m_worker, daemon=True).start()
+
+    def _switch_serial_to_4m_worker(self):
+        success = False
+        error = ""
+        try:
+            from src.utils import mouse as mouse_backend
+
+            success = bool(mouse_backend.switch_to_4m())
+            if not success:
+                error = str(mouse_backend.get_last_connect_error() or "").strip()
+        except Exception as e:
+            success = False
+            error = str(e)
+
+        self.after(0, lambda: self._on_switch_serial_to_4m_done(success, error))
+
+    def _on_switch_serial_to_4m_done(self, success, error):
+        self._serial_baud_switching = False
+        if success:
+            self._set_status_indicator("Status: Serial switched to 4M", COLOR_TEXT)
+        else:
+            suffix = f": {error}" if error else ""
+            self._set_status_indicator(f"Status: Switch to 4M failed{suffix}", COLOR_DANGER)
+        self._update_hardware_status_ui()
+
     def _connect_mouse_api(self, target_mode=None):
         if getattr(self, "_mouse_api_connecting", False):
             self._set_status_indicator("Status: HW connecting...", COLOR_TEXT_DIM)
+            return
+        if getattr(self, "_serial_baud_switching", False):
+            self._set_status_indicator("Status: Serial baud switching...", COLOR_TEXT_DIM)
             return
 
         mode = target_mode or getattr(config, "mouse_api", "Serial")
@@ -3595,6 +3660,11 @@ class ViewerApp(ctk.CTk):
                         self._set_option_value(k, trigger_activation_display.get(str(v), "Hold to Enable"))
                     else:
                         self._set_option_value(k, v)
+
+                if k == "serial_auto_switch_4m":
+                    self.saved_serial_auto_switch_4m = bool(v)
+                    if hasattr(self, "var_serial_auto_switch_4m"):
+                        self.var_serial_auto_switch_4m.set(bool(v))
                 
                 # 鏇存柊 OpenCV 椤ず瑷疆鐨?UI 璁婇噺
                 if k == "show_opencv_windows" and hasattr(self, "show_opencv_var"):
@@ -4165,7 +4235,9 @@ class ViewerApp(ctk.CTk):
             serial_mode = str(getattr(config, "serial_port_mode", "Auto")).strip().lower()
             serial_mode_label = "Manual" if serial_mode == "manual" else "Auto"
             configured_port = str(getattr(config, "serial_port", "")).strip()
+            auto_switch_4m = bool(getattr(config, "serial_auto_switch_4m", False))
             details.append(f"COM Mode: {serial_mode_label}")
+            details.append(f"Auto Switch 4M On Startup: {'Yes' if auto_switch_4m else 'No'}")
             if serial_mode_label == "Manual":
                 details.append(f"Configured Port: {configured_port or '(empty)'}")
             else:

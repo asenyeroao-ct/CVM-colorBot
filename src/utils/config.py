@@ -60,6 +60,7 @@ class Config:
         self.mouse_dpi = 800
         self.mouse_api = "Serial"  # Serial, Arduino, SendInput, Net, KmboxA, MakV2, DHZ
         self.auto_connect_mouse_api = False
+        self.serial_auto_switch_4m = False
         self.serial_port_mode = "Auto"  # Auto, Manual
         self.serial_port = ""
         self.arduino_port = ""
@@ -333,6 +334,7 @@ class Config:
             "mouse_dpi": self.mouse_dpi,
             "mouse_api": self.mouse_api,
             "auto_connect_mouse_api": self.auto_connect_mouse_api,
+            "serial_auto_switch_4m": self.serial_auto_switch_4m,
             "serial_port_mode": self.serial_port_mode,
             "serial_port": self.serial_port,
             "arduino_port": self.arduino_port,
@@ -539,6 +541,7 @@ class Config:
                 setattr(self, key, value)
         serial_mode = str(getattr(self, "serial_port_mode", "Auto")).strip().lower()
         self.serial_port_mode = "Manual" if serial_mode == "manual" else "Auto"
+        self.serial_auto_switch_4m = bool(getattr(self, "serial_auto_switch_4m", False))
         self.serial_port = str(getattr(self, "serial_port", "")).strip()
         self.arduino_port = str(getattr(self, "arduino_port", "")).strip()
         try:

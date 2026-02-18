@@ -604,18 +604,26 @@ class Mouse:
         if hasattr(self, "_inited"):
             return
         auto_connect = False
+        serial_auto_switch_4m = False
         try:
             from src.utils.config import config
 
             auto_connect = bool(getattr(config, "auto_connect_mouse_api", False))
+            serial_auto_switch_4m = bool(getattr(config, "serial_auto_switch_4m", False))
         except Exception:
             auto_connect = False
+            serial_auto_switch_4m = False
 
         if auto_connect:
             if not connect_to_makcu():
                 log_print(f"[ERROR] Mouse init failed to connect. reason={get_last_connect_error()}")
             else:
                 Mouse._listener = state.listener_thread
+                if serial_auto_switch_4m and state.active_backend == "Serial":
+                    if switch_to_4m():
+                        log_print("[INFO] Startup auto-switch to 4M completed.")
+                    else:
+                        log_print("[WARN] Startup auto-switch to 4M failed.")
         else:
             disconnect_all()
             log_print("[INFO] Mouse auto-connect disabled. Waiting for manual connect.")

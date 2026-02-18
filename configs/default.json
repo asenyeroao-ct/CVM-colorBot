@@ -43,6 +43,7 @@
     "mouse_dpi": 800,
     "mouse_api": "Serial",
     "auto_connect_mouse_api": true,
+    "serial_auto_switch_4m": false,
     "serial_port_mode": "Auto",
     "serial_port": "",
     "arduino_port": "",
