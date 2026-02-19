@@ -1,4 +1,5 @@
 {
+    "_comment": "This is CVM colorBot config.",
     "enableaim": true,
     "enabletb": true,
     "offsetX": -2,

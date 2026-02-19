@@ -4,6 +4,9 @@ UI 妯＄祫 - Ultra Minimalist 棰ㄦ牸
 """
 import customtkinter as ctk
 import tkinter as tk
+from tkinter import filedialog, messagebox, simpledialog
+import ctypes
+from ctypes import wintypes
 import os
 import json
 import cv2
@@ -35,6 +38,49 @@ COLOR_SUCCESS = "#4CAF50"
 FONT_MAIN = ("Roboto", 11)
 FONT_BOLD = ("Roboto", 11, "bold")
 FONT_TITLE = ("Roboto", 18, "bold")
+
+CVM_CONFIG_COMMENT_KEY = "_comment"
+CVM_CONFIG_COMMENT_VALUE = "This is CVM colorBot config."
+CF_HDROP = 15
+GMEM_MOVEABLE = 0x0002
+GMEM_ZEROINIT = 0x0040
+GHND = GMEM_MOVEABLE | GMEM_ZEROINIT
+
+
+class DROPFILES(ctypes.Structure):
+    _fields_ = [
+        ("pFiles", wintypes.DWORD),
+        ("pt_x", wintypes.LONG),
+        ("pt_y", wintypes.LONG),
+        ("fNC", wintypes.BOOL),
+        ("fWide", wintypes.BOOL),
+    ]
+
+
+if os.name == "nt":
+    KERNEL32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    USER32 = ctypes.WinDLL("user32", use_last_error=True)
+
+    KERNEL32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    KERNEL32.GlobalAlloc.restype = wintypes.HANDLE
+    KERNEL32.GlobalLock.argtypes = [wintypes.HANDLE]
+    KERNEL32.GlobalLock.restype = wintypes.LPVOID
+    KERNEL32.GlobalUnlock.argtypes = [wintypes.HANDLE]
+    KERNEL32.GlobalUnlock.restype = wintypes.BOOL
+    KERNEL32.GlobalFree.argtypes = [wintypes.HANDLE]
+    KERNEL32.GlobalFree.restype = wintypes.HANDLE
+
+    USER32.OpenClipboard.argtypes = [wintypes.HWND]
+    USER32.OpenClipboard.restype = wintypes.BOOL
+    USER32.EmptyClipboard.argtypes = []
+    USER32.EmptyClipboard.restype = wintypes.BOOL
+    USER32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+    USER32.SetClipboardData.restype = wintypes.HANDLE
+    USER32.CloseClipboard.argtypes = []
+    USER32.CloseClipboard.restype = wintypes.BOOL
+else:
+    KERNEL32 = None
+    USER32 = None
 
 BUTTONS = {
     0: 'Left Mouse Button',
@@ -2924,7 +2970,9 @@ class ViewerApp(ctk.CTk):
         btn_frame.pack(fill="x", pady=10)
         self._add_text_button(btn_frame, "SAVE", self._save_config).pack(side="left", padx=(0, 10))
         self._add_text_button(btn_frame, "LOAD", self._load_selected_config).pack(side="left", padx=(0, 10))
-        self._add_text_button(btn_frame, "NEW", self._save_new_config).pack(side="left")
+        self._add_text_button(btn_frame, "NEW", self._save_new_config).pack(side="left", padx=(0, 10))
+        self._add_text_button(btn_frame, "EXPORT", self._export_selected_config).pack(side="left", padx=(0, 10))
+        self._add_text_button(btn_frame, "IMPORT", self._import_config_file).pack(side="left")
         
         self._add_spacer()
         self.config_log = ctk.CTkTextbox(
@@ -4246,6 +4294,7 @@ class ViewerApp(ctk.CTk):
 
     def _apply_settings(self, data, config_name=None):
         try:
+            data = self._strip_config_metadata(data)
             for k, v in data.items():
                 setattr(config, k, v)
                 if hasattr(self.tracker, k):
@@ -4402,49 +4451,231 @@ class ViewerApp(ctk.CTk):
                 pass
 
     def _save_new_config(self):
-        from tkinter import simpledialog
         name = simpledialog.askstring("Config name", "Enter the config name:")
-        if not name: return
+        if not name:
+            return
         self._do_save(name)
 
     def _save_config(self):
         name = self.config_option.get() or "default"
         self._do_save(name)
 
-    def _do_save(self, name):
-        data = self._get_current_settings()
-        path = os.path.join("configs", f"{name}.json")
+    def _normalize_config_display_name(self, name):
+        normalized = str(name or "").strip()
+        if normalized.lower().endswith(".json"):
+            normalized = normalized[:-5]
+        if normalized.lower().endswith("_cvm"):
+            normalized = normalized[:-4]
+        normalized = normalized.strip()
+        return normalized or "default"
+
+    def _config_display_name_from_filename(self, filename):
+        base_name = str(filename or "").strip()
+        if base_name.lower().endswith(".json"):
+            base_name = base_name[:-5]
+        if base_name.lower().endswith("_cvm"):
+            base_name = base_name[:-4]
+        base_name = base_name.strip()
+        return base_name or "default"
+
+    def _config_filename_from_display_name(self, display_name):
+        normalized = self._normalize_config_display_name(display_name)
+        return f"{normalized}_cvm.json"
+
+    def _resolve_config_path(self, display_name, force_new_suffix=False):
+        normalized = self._normalize_config_display_name(display_name)
+        if force_new_suffix:
+            filename = self._config_filename_from_display_name(normalized)
+        else:
+            file_map = getattr(self, "_config_file_map", {})
+            filename = file_map.get(normalized) or self._config_filename_from_display_name(normalized)
+        return os.path.join("configs", filename), normalized
+
+    def _build_config_payload(self, data):
+        payload = {CVM_CONFIG_COMMENT_KEY: CVM_CONFIG_COMMENT_VALUE}
+        payload.update(dict(data or {}))
+        return payload
+
+    def _strip_config_metadata(self, data):
+        if not isinstance(data, dict):
+            return {}
+        cleaned = dict(data)
+        cleaned.pop(CVM_CONFIG_COMMENT_KEY, None)
+        return cleaned
+
+    def _has_valid_config_comment(self, data):
+        if not isinstance(data, dict):
+            return False
+        comment = str(data.get(CVM_CONFIG_COMMENT_KEY, "")).strip()
+        return comment == CVM_CONFIG_COMMENT_VALUE
+
+    def _copy_file_to_clipboard(self, file_path):
+        if os.name != "nt" or USER32 is None or KERNEL32 is None:
+            raise RuntimeError("File clipboard export is only supported on Windows.")
+
+        abs_path = os.path.abspath(file_path)
+        if not os.path.isfile(abs_path):
+            raise FileNotFoundError(abs_path)
+
+        file_list_bytes = f"{abs_path}\0\0".encode("utf-16-le")
+        dropfiles = DROPFILES()
+        dropfiles.pFiles = ctypes.sizeof(DROPFILES)
+        dropfiles.pt_x = 0
+        dropfiles.pt_y = 0
+        dropfiles.fNC = False
+        dropfiles.fWide = True
+
+        total_size = ctypes.sizeof(DROPFILES) + len(file_list_bytes)
+        h_global = KERNEL32.GlobalAlloc(GHND, total_size)
+        if not h_global:
+            raise OSError("Failed to allocate clipboard memory.")
+
+        locked_mem = KERNEL32.GlobalLock(h_global)
+        if not locked_mem:
+            KERNEL32.GlobalFree(h_global)
+            raise OSError("Failed to lock clipboard memory.")
+
         try:
-            with open(path, "w") as f:
-                json.dump(data, f, indent=4)
+            ctypes.memmove(locked_mem, ctypes.byref(dropfiles), ctypes.sizeof(DROPFILES))
+            ctypes.memmove(int(locked_mem) + ctypes.sizeof(DROPFILES), file_list_bytes, len(file_list_bytes))
+        finally:
+            KERNEL32.GlobalUnlock(h_global)
+
+        if not USER32.OpenClipboard(None):
+            KERNEL32.GlobalFree(h_global)
+            raise OSError("Failed to open clipboard.")
+
+        try:
+            if not USER32.EmptyClipboard():
+                KERNEL32.GlobalFree(h_global)
+                raise OSError("Failed to empty clipboard.")
+            if not USER32.SetClipboardData(CF_HDROP, h_global):
+                KERNEL32.GlobalFree(h_global)
+                raise OSError("Failed to set clipboard data.")
+            h_global = None
+        finally:
+            USER32.CloseClipboard()
+
+    def _do_save(self, name):
+        path, normalized_name = self._resolve_config_path(name, force_new_suffix=True)
+        settings = self._get_current_settings()
+        data = self._build_config_payload(settings)
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
             self._refresh_config_list()
-            self.config_option.set(name)
-            self._log_config(f"Saved: {name}")
+            self.config_option.set(normalized_name)
+            self._log_config(f"Saved: {normalized_name}")
         except Exception as e:
             self._log_config(f"Save error: {e}")
 
     def _load_selected_config(self):
-        name = self.config_option.get()
-        path = os.path.join("configs", f"{name}.json")
+        path, normalized_name = self._resolve_config_path(self.config_option.get())
         try:
-            with open(path, "r") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            self._apply_settings(data, config_name=name)
+            if not isinstance(data, dict):
+                raise ValueError("Config file must contain a JSON object.")
+            settings = self._strip_config_metadata(data)
+            self._apply_settings(settings, config_name=normalized_name)
         except Exception as e:
             self._log_config(f"Load error: {e}")
 
+    def _export_selected_config(self):
+        path, normalized_name = self._resolve_config_path(self.config_option.get())
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                raw_data = json.load(f)
+            if not isinstance(raw_data, dict):
+                raise ValueError("Config file must contain a JSON object.")
+
+            settings = self._strip_config_metadata(raw_data)
+            export_payload = self._build_config_payload(settings)
+            if raw_data != export_payload:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(export_payload, f, indent=4, ensure_ascii=False)
+
+            self._copy_file_to_clipboard(path)
+            self._log_config(f"Exported file to clipboard: {normalized_name}")
+            messagebox.showinfo("Export", "Config file copied to clipboard. You can now paste it elsewhere.")
+        except Exception as e:
+            self._log_config(f"Export error: {e}")
+            messagebox.showerror("Export", f"Export failed:\n{e}")
+
+    def _import_config_file(self):
+        file_path = filedialog.askopenfilename(
+            title="Import config file",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+        )
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                raw_data = json.load(f)
+            if not isinstance(raw_data, dict):
+                raise ValueError("Imported file must contain a JSON object.")
+            if not self._has_valid_config_comment(raw_data):
+                raise ValueError("Invalid config file: missing CVM colorBot comment marker.")
+
+            settings = self._strip_config_metadata(raw_data)
+            data = self._build_config_payload(settings)
+
+            source_name = self._normalize_config_display_name(os.path.splitext(os.path.basename(file_path))[0])
+            target_path, normalized_name = self._resolve_config_path(source_name, force_new_suffix=True)
+
+            if os.path.exists(target_path) and os.path.abspath(target_path) != os.path.abspath(file_path):
+                should_overwrite = messagebox.askyesno(
+                    "Import",
+                    f"Profile '{normalized_name}' already exists. Overwrite it?",
+                )
+                if not should_overwrite:
+                    self._log_config(f"Import canceled: {normalized_name}")
+                    return
+
+            with open(target_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+
+            self._refresh_config_list()
+            self.config_option.set(normalized_name)
+            self._apply_settings(settings, config_name=normalized_name)
+            self._log_config(f"Imported: {normalized_name}")
+            messagebox.showinfo("Import", f"Imported config: {normalized_name}")
+        except Exception as e:
+            self._log_config(f"Import error: {e}")
+            messagebox.showerror("Import", f"Import failed:\n{e}")
+
     def _refresh_config_list(self):
-        files = [f[:-5] for f in os.listdir("configs") if f.endswith(".json")]
-        if not files: files = ["default"]
-        current = self.config_option.get()
-        self.config_option.configure(values=files)
-        if current in files:
+        raw_files = [f for f in os.listdir("configs") if str(f).lower().endswith(".json")]
+        file_map = {}
+        for filename in sorted(raw_files, key=lambda item: str(item).lower()):
+            display_name = self._config_display_name_from_filename(filename)
+            existing = file_map.get(display_name)
+            if existing:
+                existing_is_new = str(existing).lower().endswith("_cvm.json")
+                current_is_new = str(filename).lower().endswith("_cvm.json")
+                if existing_is_new and not current_is_new:
+                    continue
+                if current_is_new and not existing_is_new:
+                    file_map[display_name] = filename
+                continue
+            file_map[display_name] = filename
+
+        if not file_map:
+            file_map = {"default": self._config_filename_from_display_name("default")}
+
+        self._config_file_map = file_map
+        display_names = sorted(file_map.keys(), key=lambda item: str(item).lower())
+        current = self._normalize_config_display_name(self.config_option.get())
+
+        self.config_option.configure(values=display_names)
+        if current in display_names:
             self.config_option.set(current)
         else:
-            self.config_option.set(files[0])
+            self.config_option.set(display_names[0])
 
     def _on_config_selected(self, val):
-        self._log_config(f"Selected config: {val}")
+        self._log_config(f"Selected config: {self._normalize_config_display_name(val)}")
 
     def _log_config(self, msg):
         try:
