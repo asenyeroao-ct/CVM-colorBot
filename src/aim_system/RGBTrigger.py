@@ -15,6 +15,7 @@ import numpy as np
 from src.utils.config import config
 from src.utils.debug_logger import log_print
 from src.utils.mouse import is_button_pressed
+from .trigger_strafe_helper import apply_manual_wait_gate, reset_strafe_runtime_state, run_with_auto_strafe
 
 
 RGB_PRESETS = {
@@ -111,19 +112,23 @@ def _execute_single_click(controller, hold_min, hold_max, state_dict):
     button_pressed = False
     try:
         hold_ms = random.uniform(float(hold_min), float(hold_max))
-        try:
-            controller.press()
-            button_pressed = True
-            time.sleep(max(0.0, hold_ms) / 1000.0)
-        except Exception as exc:
-            log_print(f"[RGB Trigger press error] {exc}")
-        finally:
-            if button_pressed:
-                try:
-                    controller.release()
-                    button_pressed = False
-                except Exception as exc:
-                    log_print(f"[RGB Trigger release error] {exc}")
+        def _fire_single_click():
+            nonlocal button_pressed
+            try:
+                controller.press()
+                button_pressed = True
+                time.sleep(max(0.0, hold_ms) / 1000.0)
+            except Exception as exc:
+                log_print(f"[RGB Trigger press error] {exc}")
+            finally:
+                if button_pressed:
+                    try:
+                        controller.release()
+                        button_pressed = False
+                    except Exception as exc:
+                        log_print(f"[RGB Trigger release error] {exc}")
+
+        run_with_auto_strafe(_fire_single_click)
     except Exception as exc:
         log_print(f"[RGB Trigger click sequence error] {exc}")
     finally:
@@ -147,6 +152,7 @@ def process_rgb_triggerbot(frame, img, controller, state_dict, close_debug_windo
             state_dict["random_delay"] = None
             state_dict["confirm_count"] = 0
             state_dict["deactivation_release_sent"] = False
+            reset_strafe_runtime_state(state_dict)
         close_debug_windows()
         return "DISABLED"
 
@@ -164,10 +170,12 @@ def process_rgb_triggerbot(frame, img, controller, state_dict, close_debug_windo
             state_dict["random_delay"] = None
             state_dict["confirm_count"] = 0
             state_dict["deactivation_release_sent"] = False
+            reset_strafe_runtime_state(state_dict)
         close_debug_windows()
         return activation_error
 
     if not activation_active:
+        reset_strafe_runtime_state(state_dict)
         should_release = False
         with state_dict["burst_lock"]:
             if state_dict.get("burst_state") != "bursting":
@@ -194,6 +202,14 @@ def process_rgb_triggerbot(frame, img, controller, state_dict, close_debug_windo
         return "BUTTON_NOT_PRESSED"
     with state_dict["burst_lock"]:
         state_dict["deactivation_release_sent"] = False
+        if state_dict.get("burst_state") == "bursting":
+            return "RGB_FIRING"
+
+    manual_wait_allowed, manual_wait_status = apply_manual_wait_gate(state_dict)
+    if not manual_wait_allowed:
+        _reset_wait_state(state_dict)
+        close_debug_windows()
+        return manual_wait_status or "STRAFE_WAIT"
 
     if cv2 is None:
         return "ERROR: OpenCV unavailable"

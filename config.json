@@ -41,7 +41,7 @@
     "selected_2_tb": 2,
     "in_game_sens": 0.25,
     "mouse_dpi": 800,
-    "mouse_api": "Serial",
+    "mouse_api": "Net",
     "auto_connect_mouse_api": true,
     "serial_auto_switch_4m": false,
     "serial_port_mode": "Auto",
@@ -86,6 +86,9 @@
     "tbburst_interval_min": 10.0,
     "tbburst_interval_max": 15.0,
     "trigger_activation_type": "hold_enable",
+    "trigger_strafe_mode": "auto",
+    "trigger_strafe_auto_lead_ms": 18,
+    "trigger_strafe_manual_neutral_ms": 0,
     "trigger_roi_size": 34,
     "trigger_min_pixels": 1,
     "trigger_min_ratio": 0.0,
@@ -194,7 +197,8 @@
         "trigger:trigger_conditions": false,
         "trigger:burst_settings": false,
         "trigger:activation": true,
-        "trigger:rgb_parameters": true
+        "trigger:rgb_parameters": true,
+        "trigger:strafe_helper": true
     },
     "udp_ip": "127.0.0.1",
     "udp_port": "4321",

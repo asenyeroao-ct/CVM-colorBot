@@ -53,6 +53,12 @@ RGB_TRIGGER_PROFILE_DISPLAY = {
     "purple": "Purple",
 }
 
+TRIGGER_STRAFE_MODE_DISPLAY = {
+    "off": "Off",
+    "auto": "Auto Strafe",
+    "manual_wait": "Manual Wait",
+}
+
 class ViewerApp(ctk.CTk):
     """涓绘噳鐢ㄧ▼寮?UI 椤?(Ultra Minimalist)"""
     
@@ -1041,6 +1047,8 @@ class ViewerApp(ctk.CTk):
         else:
             self.saved_mouse_api = "Serial"
         config.mouse_api = self.saved_mouse_api
+        if not self._supports_trigger_strafe_ui(self.saved_mouse_api):
+            config.trigger_strafe_mode = "off"
         self.saved_auto_connect_mouse_api = bool(getattr(config, "auto_connect_mouse_api", self.saved_auto_connect_mouse_api))
         self.saved_serial_auto_switch_4m = bool(
             getattr(config, "serial_auto_switch_4m", self.saved_serial_auto_switch_4m)
@@ -1058,6 +1066,9 @@ class ViewerApp(ctk.CTk):
         self._update_mouse_api_ui()
         self._set_status_indicator(f"Status: Mouse API {self.saved_mouse_api} selected", COLOR_TEXT_DIM)
         self._update_hardware_status_ui()
+
+        if str(getattr(self, "_active_tab_name", "")) == "Trigger":
+            self._show_tb_tab()
 
     def _on_auto_connect_mouse_api_changed(self):
         val = bool(self.var_auto_connect_mouse_api.get())
@@ -2645,6 +2656,52 @@ class ViewerApp(ctk.CTk):
             trigger_activation_display.get(current_trigger_activation_type, "Hold to Enable")
         )
 
+        if self._supports_trigger_strafe_ui():
+            sec_strafe_helper = self._create_collapsible_section(
+                self.content_frame,
+                "Strafe Helper",
+                initially_open=False,
+            )
+            self.trigger_strafe_mode_option = self._add_option_row_in_frame(
+                sec_strafe_helper,
+                "Mode",
+                list(TRIGGER_STRAFE_MODE_DISPLAY.values()),
+                self._on_trigger_strafe_mode_selected,
+            )
+            self._option_widgets["trigger_strafe_mode"] = self.trigger_strafe_mode_option
+            current_strafe_mode = str(getattr(config, "trigger_strafe_mode", "off")).strip().lower()
+            if current_strafe_mode not in TRIGGER_STRAFE_MODE_DISPLAY:
+                current_strafe_mode = "off"
+                config.trigger_strafe_mode = "off"
+            self.trigger_strafe_mode_option.set(
+                TRIGGER_STRAFE_MODE_DISPLAY.get(current_strafe_mode, "Off")
+            )
+
+            if current_strafe_mode == "auto":
+                self._add_slider_in_frame(
+                    sec_strafe_helper,
+                    "Auto Lead (ms)",
+                    "trigger_strafe_auto_lead_ms",
+                    0,
+                    50,
+                    int(getattr(config, "trigger_strafe_auto_lead_ms", 8)),
+                    self._on_trigger_strafe_auto_lead_ms_changed,
+                    is_float=False,
+                )
+            elif current_strafe_mode == "manual_wait":
+                self._add_slider_in_frame(
+                    sec_strafe_helper,
+                    "Neutral Wait (ms)",
+                    "trigger_strafe_manual_neutral_ms",
+                    0,
+                    300,
+                    int(getattr(config, "trigger_strafe_manual_neutral_ms", 0)),
+                    self._on_trigger_strafe_manual_neutral_ms_changed,
+                    is_float=False,
+                )
+        else:
+            config.trigger_strafe_mode = "off"
+
     def _show_rcs_tab(self):
         """椤ず RCS 瑷疆妯欑堡"""
         self._active_tab_name = "RCS"
@@ -3658,6 +3715,13 @@ class ViewerApp(ctk.CTk):
                             "toggle": "Toggle",
                         }
                         self._set_option_value(k, trigger_activation_display.get(str(v), "Hold to Enable"))
+                    elif k == "trigger_strafe_mode":
+                        strafe_mode_display = {
+                            "off": "Off",
+                            "auto": "Auto Strafe",
+                            "manual_wait": "Manual Wait",
+                        }
+                        self._set_option_value(k, strafe_mode_display.get(str(v), "Off"))
                     else:
                         self._set_option_value(k, v)
 
@@ -3700,8 +3764,15 @@ class ViewerApp(ctk.CTk):
                         self.udp_fov_slider.set(v)
                     self._update_udp_fov_info()
 
-            if str(getattr(self, "_active_tab_name", "")) == "Trigger" and "trigger_type" in data:
-                self._show_tb_tab()
+            if str(getattr(self, "_active_tab_name", "")) == "Trigger":
+                if (
+                    "trigger_type" in data
+                    or "trigger_strafe_mode" in data
+                    or "mouse_api" in data
+                ):
+                    if not self._supports_trigger_strafe_ui(getattr(config, "mouse_api", "Serial")):
+                        config.trigger_strafe_mode = "off"
+                    self._show_tb_tab()
 
             from src.utils.detection import reload_model
             self.tracker.model, self.tracker.class_names = reload_model()
@@ -4120,6 +4191,8 @@ class ViewerApp(ctk.CTk):
             return "KmboxA"
         if mode_norm == "dhz":
             return "DHZ"
+        if mode_norm in ("makv2binary", "makv2_binary", "makv2-binary", "binary"):
+            return "MakV2Binary"
         if mode_norm in ("makv2", "mak_v2", "mak-v2"):
             return "MakV2"
         if mode_norm == "arduino":
@@ -4127,6 +4200,16 @@ class ViewerApp(ctk.CTk):
         if mode_norm in ("sendinput", "win32", "win32api", "win32_sendinput", "win32-sendinput"):
             return "SendInput"
         return "Serial"
+
+    def _supports_trigger_strafe_ui(self, mode=None) -> bool:
+        selected_mode = mode if mode is not None else getattr(config, "mouse_api", "Serial")
+        try:
+            from src.utils import mouse as mouse_backend
+
+            return bool(mouse_backend.supports_trigger_strafe_ui(selected_mode))
+        except Exception:
+            normalized = self._normalize_mouse_api_name(selected_mode)
+            return normalized in {"SendInput", "Net", "KmboxA", "DHZ"}
 
     def _toggle_hardware_info_details(self):
         self._hardware_info_expanded = not bool(getattr(self, "_hardware_info_expanded", False))
@@ -4934,6 +5017,27 @@ class ViewerApp(ctk.CTk):
         }
         config.trigger_activation_type = trigger_activation_map.get(val, "hold_enable")
         self._log_config(f"Trigger Mode: {val}")
+
+    def _on_trigger_strafe_mode_selected(self, val):
+        trigger_strafe_mode_map = {
+            "Off": "off",
+            "Auto Strafe": "auto",
+            "Manual Wait": "manual_wait",
+        }
+        selected_mode = trigger_strafe_mode_map.get(str(val), "off")
+        if selected_mode != "off" and not self._supports_trigger_strafe_ui():
+            selected_mode = "off"
+        old_mode = str(getattr(config, "trigger_strafe_mode", "off")).strip().lower()
+        config.trigger_strafe_mode = selected_mode
+        self._log_config(f"Trigger Strafe Mode: {val}")
+        if selected_mode != old_mode and str(getattr(self, "_active_tab_name", "")) == "Trigger":
+            self._show_tb_tab()
+
+    def _on_trigger_strafe_auto_lead_ms_changed(self, val):
+        config.trigger_strafe_auto_lead_ms = int(val)
+
+    def _on_trigger_strafe_manual_neutral_ms_changed(self, val):
+        config.trigger_strafe_manual_neutral_ms = int(val)
     
     # Mouse Input Debug Callbacks
     def _on_debug_mouse_input_changed(self):

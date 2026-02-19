@@ -88,15 +88,15 @@ class Config:
         self.fovsize = 100
         self.tbfovsize = 5 
         self.trigger_type = "current"  # current, rgb
-        # Triggerbot delay range (闅ㄦ绡勫湇锛岀)
+        # Triggerbot delay range (seconds)
         self.tbdelay_min = 0.08
         self.tbdelay_max = 0.15
-        # Triggerbot hold range (闅ㄦ绡勫湇锛屾绉?
+        # Triggerbot hold range (milliseconds)
         self.tbhold_min = 40
         self.tbhold_max = 60
-        # Triggerbot 閫ｇ櫦瑷疆锛堢瘎鍦嶏級
-        self.tbcooldown_min = 0.0  # 鍐峰嵒鏅傞枔鏈€灏忓€硷紙绉掞級
-        self.tbcooldown_max = 0.0  # 鍐峰嵒鏅傞枔鏈€澶у€硷紙绉掞級
+        # Triggerbot cooldown range
+        self.tbcooldown_min = 0.0  # seconds
+        self.tbcooldown_max = 0.0  # seconds
         # RGB Trigger delay/hold/cooldown
         self.rgb_tbdelay_min = 0.08  # seconds
         self.rgb_tbdelay_max = 0.15  # seconds
@@ -105,11 +105,14 @@ class Config:
         self.rgb_tbcooldown_min = 0.0  # seconds
         self.rgb_tbcooldown_max = 0.0  # seconds
         self.rgb_color_profile = "purple"  # red, yellow, purple
-        self.tbburst_count_min = 1  # 閫ｇ櫦娆℃暩鏈€灏忓€?
-        self.tbburst_count_max = 1  # 閫ｇ櫦娆℃暩鏈€澶у€?
-        self.tbburst_interval_min = 0.0  # 閫ｇ櫦闁撻殧鏈€灏忓€硷紙姣锛?
-        self.tbburst_interval_max = 0.0  # 閫ｇ櫦闁撻殧鏈€澶у€硷紙姣锛?
+        self.tbburst_count_min = 1  # minimum shots per burst
+        self.tbburst_count_max = 1  # maximum shots per burst
+        self.tbburst_interval_min = 0.0  # minimum interval between burst shots (ms)
+        self.tbburst_interval_max = 0.0  # maximum interval between burst shots (ms)
         self.trigger_activation_type = "hold_enable"  # hold_enable, hold_disable, toggle
+        self.trigger_strafe_mode = "off"  # off, auto, manual_wait
+        self.trigger_strafe_auto_lead_ms = 8  # ms
+        self.trigger_strafe_manual_neutral_ms = 0  # ms
         
         self.trigger_roi_size = 8
         self.trigger_min_pixels = 4
@@ -379,6 +382,9 @@ class Config:
             "tbburst_interval_min": self.tbburst_interval_min,
             "tbburst_interval_max": self.tbburst_interval_max,
             "trigger_activation_type": self.trigger_activation_type,
+            "trigger_strafe_mode": self.trigger_strafe_mode,
+            "trigger_strafe_auto_lead_ms": self.trigger_strafe_auto_lead_ms,
+            "trigger_strafe_manual_neutral_ms": self.trigger_strafe_manual_neutral_ms,
             "trigger_roi_size": self.trigger_roi_size,
             "trigger_min_pixels": self.trigger_min_pixels,
             "trigger_min_ratio": self.trigger_min_ratio,
@@ -632,6 +638,21 @@ class Config:
             self.ui_collapsible_states = {str(k): bool(v) for k, v in raw_states.items()}
         else:
             self.ui_collapsible_states = {}
+
+        mode = str(getattr(self, "trigger_strafe_mode", "off")).strip().lower()
+        if mode not in {"off", "auto", "manual_wait"}:
+            mode = "off"
+        self.trigger_strafe_mode = mode
+        try:
+            self.trigger_strafe_auto_lead_ms = max(0, min(50, int(getattr(self, "trigger_strafe_auto_lead_ms", 8))))
+        except Exception:
+            self.trigger_strafe_auto_lead_ms = 8
+        try:
+            self.trigger_strafe_manual_neutral_ms = max(
+                0, min(300, int(getattr(self, "trigger_strafe_manual_neutral_ms", 0)))
+            )
+        except Exception:
+            self.trigger_strafe_manual_neutral_ms = 0
     
     def save_to_file(self, filename="config.json"):
         """淇濆瓨閰嶇疆鍒版枃浠?"""

@@ -93,7 +93,6 @@ def _build_vk_by_name():
 
     for idx, letter in enumerate("ABCDEFGHIJKLMNOPQRSTUVWXYZ"):
         mapping[letter] = 0x41 + idx
-    # Explicit common movement keys for readability.
     mapping.update({
         "W": 0x57,
         "A": 0x41,

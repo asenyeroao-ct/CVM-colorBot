@@ -30,6 +30,76 @@ def _normalize_api_name(mode: str) -> str:
     return "Serial"
 
 
+_DEFAULT_BACKEND_CAPABILITIES = {
+    "keyboard_output": False,
+    "keyboard_state": False,
+    "trigger_strafe_ui": False,
+}
+
+_BACKEND_CAPABILITIES = {
+    "Serial": {
+        "keyboard_output": True,
+        "keyboard_state": False,
+        "trigger_strafe_ui": False,
+    },
+    "Arduino": {
+        "keyboard_output": False,
+        "keyboard_state": False,
+        "trigger_strafe_ui": False,
+    },
+    "SendInput": {
+        "keyboard_output": True,
+        "keyboard_state": True,
+        "trigger_strafe_ui": True,
+    },
+    "Net": {
+        "keyboard_output": True,
+        "keyboard_state": True,
+        "trigger_strafe_ui": True,
+    },
+    "KmboxA": {
+        "keyboard_output": True,
+        "keyboard_state": True,
+        "trigger_strafe_ui": True,
+    },
+    "MakV2": {
+        "keyboard_output": True,
+        "keyboard_state": False,
+        "trigger_strafe_ui": False,
+    },
+    "MakV2Binary": {
+        "keyboard_output": True,
+        "keyboard_state": False,
+        "trigger_strafe_ui": False,
+    },
+    "DHZ": {
+        "keyboard_output": True,
+        "keyboard_state": True,
+        "trigger_strafe_ui": True,
+    },
+}
+
+
+def get_backend_capabilities(mode: str = None) -> dict:
+    backend = _normalize_api_name(mode) if mode is not None else _get_selected_backend_from_config()
+    capabilities = dict(_DEFAULT_BACKEND_CAPABILITIES)
+    capabilities.update(_BACKEND_CAPABILITIES.get(backend, {}))
+    capabilities["backend"] = backend
+    return capabilities
+
+
+def supports_keyboard_output(mode: str = None) -> bool:
+    return bool(get_backend_capabilities(mode).get("keyboard_output", False))
+
+
+def supports_keyboard_state(mode: str = None) -> bool:
+    return bool(get_backend_capabilities(mode).get("keyboard_state", False))
+
+
+def supports_trigger_strafe_ui(mode: str = None) -> bool:
+    return bool(get_backend_capabilities(mode).get("trigger_strafe_ui", False))
+
+
 def _get_selected_backend_from_config() -> str:
     try:
         from src.utils.config import config

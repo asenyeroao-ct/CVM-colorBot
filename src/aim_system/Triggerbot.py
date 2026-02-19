@@ -13,6 +13,7 @@ except Exception:
 from src.utils.config import config
 from src.utils.debug_logger import log_print
 from src.utils.mouse import is_button_pressed
+from .trigger_strafe_helper import apply_manual_wait_gate, reset_strafe_runtime_state, run_with_auto_strafe
 
 
 _triggerbot_state = {
@@ -27,6 +28,7 @@ _triggerbot_state = {
     "activation_toggle_state": False,
     "active_trigger_type": "current",
     "deactivation_release_sent": False,
+    "strafe_manual_neutral_since": None,
     "burst_lock": threading.Lock(),
 }
 
@@ -121,6 +123,7 @@ def _reset_tracking_state(reset_burst=False):
         _triggerbot_state["enter_range_time"] = None
         _triggerbot_state["random_delay"] = None
         _triggerbot_state["confirm_count"] = 0
+        reset_strafe_runtime_state(_triggerbot_state)
 
 
 def _resolve_activation_mode(primary_valid, secondary_valid, selected_tb_btn, selected_2_tb):
@@ -176,19 +179,23 @@ def _execute_burst_sequence(
     try:
         for shot_index in range(burst_count):
             random_hold = random.uniform(float(hold_min), float(hold_max))
-            try:
-                controller.press()
-                button_pressed = True
-                time.sleep(max(0.0, random_hold) / 1000.0)
-            except Exception as exc:
-                log_print(f"[Triggerbot press error] {exc}")
-            finally:
+            def _fire_single_shot():
+                nonlocal button_pressed
                 try:
-                    if button_pressed:
-                        controller.release()
-                        button_pressed = False
+                    controller.press()
+                    button_pressed = True
+                    time.sleep(max(0.0, random_hold) / 1000.0)
                 except Exception as exc:
-                    log_print(f"[Triggerbot release error] {exc}")
+                    log_print(f"[Triggerbot press error] {exc}")
+                finally:
+                    try:
+                        if button_pressed:
+                            controller.release()
+                            button_pressed = False
+                    except Exception as exc:
+                        log_print(f"[Triggerbot release error] {exc}")
+
+            run_with_auto_strafe(_fire_single_shot)
 
             if shot_index < burst_count - 1:
                 try:
@@ -277,6 +284,7 @@ def process_triggerbot(
         return activation_error
 
     if not activation_active:
+        reset_strafe_runtime_state(_triggerbot_state)
         should_release = False
         with _triggerbot_state["burst_lock"]:
             if _triggerbot_state["burst_state"] != "bursting":
@@ -303,6 +311,19 @@ def process_triggerbot(
         return "BUTTON_NOT_PRESSED"
     with _triggerbot_state["burst_lock"]:
         _triggerbot_state["deactivation_release_sent"] = False
+        if _triggerbot_state.get("burst_state") == "bursting":
+            return "BURSTING"
+
+    manual_wait_allowed, manual_wait_status = apply_manual_wait_gate(_triggerbot_state)
+    if not manual_wait_allowed:
+        with _triggerbot_state["burst_lock"]:
+            if _triggerbot_state["burst_state"] != "bursting":
+                _triggerbot_state["enter_range_time"] = None
+                _triggerbot_state["random_delay"] = None
+                _triggerbot_state["burst_state"] = None
+            _triggerbot_state["confirm_count"] = 0
+        _close_trigger_debug_windows()
+        return manual_wait_status or "STRAFE_WAIT"
 
     try:
         detect_img = source_img if source_img is not None else img
