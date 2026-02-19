@@ -1,5 +1,5 @@
 {
-    "version": "1.0.0",
-    "release_date": "2025-01-20",
-    "changelog": "Initial release with update system"
+    "version": "2.2.1",
+    "release_date": "2026-02-20",
+    "changelog": "Version 2.2.1: Added ADS FOV feature with toggle/hold modes and improved interactive keybind system, added config export/import functionality, plus bug fixes and minor improvements. Major version 2.0 includes: Complete mouse module architectural refactoring with modular multi-backend support, three new aiming modes (Bezier, NCAF, WindMouse), MSS screen capture, Mouse Lock feature, custom HSV configuration, aimbot activation types, major RCS & Silent Aim improvements with Y-axis release, and extensive UI enhancements"
 }
