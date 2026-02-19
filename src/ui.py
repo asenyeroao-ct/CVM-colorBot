@@ -153,7 +153,11 @@ class ViewerApp(ctk.CTk):
         self._build_sidebar()
         
         # 鍏у鍗€
-        self.content_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.content_frame = ctk.CTkScrollableFrame(
+            self, fg_color="transparent",
+            scrollbar_button_color=COLOR_BORDER,
+            scrollbar_button_hover_color=COLOR_SURFACE
+        )
         self.content_frame.grid(row=1, column=1, sticky="nsew", padx=24, pady=20)
         
         self._show_general_tab()

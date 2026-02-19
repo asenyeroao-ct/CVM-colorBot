@@ -109,7 +109,7 @@ class HsvPreviewWindow(ctk.CTkToplevel):
     def _build_ui(self):
         self.title("HSV Filter Preview")
         self.configure(fg_color=COLOR_BG)
-        self.resizable(False, False)
+        self.resizable(True, True)
         self.attributes("-topmost", True)
 
         # Title bar
@@ -129,7 +129,11 @@ class HsvPreviewWindow(ctk.CTkToplevel):
         ).pack(side="left", padx=4)
 
         # Main area
-        main = ctk.CTkFrame(self, fg_color="transparent")
+        main = ctk.CTkScrollableFrame(
+            self, fg_color="transparent",
+            scrollbar_button_color=COLOR_BORDER,
+            scrollbar_button_hover_color=COLOR_SURFACE
+        )
         main.pack(fill="both", expand=True, padx=12, pady=(8, 4))
 
         # Preview panels
