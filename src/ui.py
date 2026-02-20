@@ -628,9 +628,15 @@ class ViewerApp(ctk.CTk):
         # Capture Method Selection
         self.capture_method_var.set(self.capture.mode)
         # 鍓靛缓 option menu
-        self.capture_method_option = self._add_option_row_in_frame(sec_capture, "Method", ["NDI", "UDP", "CaptureCard", "MSS"], self._on_capture_method_changed)
+        self.capture_method_option = self._add_option_row_in_frame(sec_capture, "Method", ["NDI", "UDP", "Capture Card (OpenCV)", "Capture Card (GStreamer)", "MSS"], self._on_capture_method_changed)
         # 椤紡瑷疆鐣跺墠鍊?
-        self.capture_method_option.set(self.capture.mode)
+        # Map internal mode to UI display name
+        display_mode = self.capture.mode
+        if display_mode == "CaptureCard":
+            display_mode = "Capture Card (OpenCV)"
+        elif display_mode == "CaptureCardGStreamer":
+            display_mode = "Capture Card (GStreamer)"
+        self.capture_method_option.set(display_mode)
         
         self._add_spacer_in_frame(sec_capture)
         
@@ -1696,6 +1702,11 @@ class ViewerApp(ctk.CTk):
         self._add_spacer_in_frame(self.capture_content_frame)
             
         method = self.capture_method_var.get()
+        # Map UI display name to internal mode for processing
+        if method == "Capture Card (OpenCV)":
+            method = "CaptureCard"
+        elif method == "Capture Card (GStreamer)":
+            method = "CaptureCardGStreamer"
         
         if method == "NDI":
             # NDI Controls
@@ -1865,8 +1876,8 @@ class ViewerApp(ctk.CTk):
             )
             self.udp_fov_info_label.pack(anchor="w", pady=(0, 5))
             
-        elif method == "CaptureCard":
-            # CaptureCard Controls
+        elif method in ["CaptureCard", "CaptureCardGStreamer"]:
+            # CaptureCard Controls (shared UI for both OpenCV and GStreamer)
             self._add_subtitle_in_frame(self.capture_content_frame, "CAPTURE CARD SETTINGS")
             
             # Device Index
@@ -5233,8 +5244,15 @@ class ViewerApp(ctk.CTk):
     
     def _on_capture_method_changed(self, val):
         self.capture_method_var.set(val)
-        self.capture.set_mode(val)
-        config.capture_mode = val  # 淇濆瓨鍒?config
+        # Map UI display name to internal mode
+        internal_mode = val
+        if val == "Capture Card (OpenCV)":
+            internal_mode = "CaptureCard"
+        elif val == "Capture Card (GStreamer)":
+            internal_mode = "CaptureCardGStreamer"
+        
+        self.capture.set_mode(internal_mode)
+        config.capture_mode = internal_mode  # 淇濆瓨鍒?config
         self._update_capture_ui()
         self._set_status_indicator(f"Status: Mode {val}", COLOR_TEXT)
 
@@ -5361,7 +5379,7 @@ class ViewerApp(ctk.CTk):
     
     def _connect_capture_card(self):
         """閫ｆ帴 CaptureCard"""
-        if self.capture.mode == "CaptureCard":
+        if self.capture.mode in ["CaptureCard", "CaptureCardGStreamer"]:
             # 纰轰繚閰嶇疆宸叉洿鏂?
             if hasattr(self, 'capture_card_device_entry'):
                 try:

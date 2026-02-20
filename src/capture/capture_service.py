@@ -35,13 +35,85 @@ except ImportError as e:
     HAS_MSS = False
     log_print(f"[Capture] MSS module import failed: {e}")
 
+# 嘗試導入 CaptureCardGStreamer
+try:
+    import ctypes
+    import os
+    # Try to load GStreamer DLL to check availability
+    # MSVC version uses gstreamer-1.0-0.dll, MinGW uses gst-1.0.dll
+    dll_names = ["gstreamer-1.0-0.dll", "gst-1.0.dll"]
+    gst_dll = None
+    
+    # Try loading from PATH first
+    for dll_name in dll_names:
+        try:
+            gst_dll = ctypes.CDLL(dll_name)
+            HAS_GSTREAMER = True
+            log_print(f"[Capture] GStreamer DLL ({dll_name}) found in PATH")
+            break
+        except OSError:
+            continue
+    
+    if not gst_dll:
+        # Try common installation paths
+        possible_paths = [
+            os.environ.get("GSTREAMER_1_0_ROOT_MSVC_X86_64", ""),
+            r"C:\gstreamer\1.0\msvc_x86_64",
+            r"C:\gstreamer\1.0\mingw_x86_64",
+            r"C:\Program Files\gstreamer\1.0\msvc_x86_64",
+            r"C:\Program Files (x86)\gstreamer\1.0\msvc_x86_64",
+        ]
+        
+        for base_path in possible_paths:
+            if not base_path:
+                continue
+            # Try both bin subdirectory and direct path
+            for dll_name in dll_names:
+                dll_paths = [
+                    os.path.join(base_path, "bin", dll_name),
+                    os.path.join(base_path, dll_name),  # In case base_path already includes bin
+                ]
+                for dll_path in dll_paths:
+                    if os.path.exists(dll_path):
+                        try:
+                            gst_dll = ctypes.CDLL(dll_path)
+                            HAS_GSTREAMER = True
+                            log_print(f"[Capture] GStreamer DLL found at {dll_path}")
+                            break
+                        except OSError as e:
+                            log_print(f"[Capture] Failed to load {dll_path}: {e}")
+                            continue
+                if HAS_GSTREAMER:
+                    break
+            if HAS_GSTREAMER:
+                break
+        
+        if not gst_dll:
+            HAS_GSTREAMER = False
+            log_print(f"[Capture] GStreamer DLL not found (tried: {', '.join(dll_names)}). GStreamer mode will be unavailable.")
+    
+    if HAS_GSTREAMER:
+        from .CaptureCardGStreamer import create_capture_card_gstreamer_camera
+        log_print("[Capture] CaptureCardGStreamer module loaded successfully.")
+    else:
+        HAS_GSTREAMER = False
+        log_print("[Capture] CaptureCardGStreamer mode will be unavailable.")
+except ImportError as e:
+    HAS_GSTREAMER = False
+    log_print(f"[Capture] CaptureCardGStreamer module import failed: {e}")
+    log_print("[Capture] CaptureCardGStreamer mode will be unavailable.")
+except Exception as e:
+    HAS_GSTREAMER = False
+    log_print(f"[Capture] GStreamer DLL detection failed: {e}")
+    log_print("[Capture] CaptureCardGStreamer mode will be unavailable.")
+
 class CaptureService:
     """
     捕獲服務管理器
-    統一管理 NDI、UDP、CaptureCard 和 MSS 四種捕獲方式，提供統一的接口。
+    統一管理 NDI、UDP、CaptureCard、CaptureCardGStreamer 和 MSS 五種捕獲方式，提供統一的接口。
     """
     def __init__(self):
-        self.mode = "NDI" # "NDI", "UDP", "CaptureCard", or "MSS"
+        self.mode = "NDI" # "NDI", "UDP", "CaptureCard", "CaptureCardGStreamer", or "MSS"
         
         # NDI
         self.ndi = NDIManager()
@@ -49,8 +121,11 @@ class CaptureService:
         # UDP
         self.udp_manager = OBS_UDP_Manager() if HAS_UDP else None
         
-        # CaptureCard
+        # CaptureCard (OpenCV)
         self.capture_card_camera = None
+        
+        # CaptureCard (GStreamer)
+        self.capture_card_gstreamer_camera = None
         
         # MSS
         self.mss_capture = None
@@ -60,7 +135,7 @@ class CaptureService:
 
     def set_mode(self, mode):
         """切換捕獲模式"""
-        if mode not in ["NDI", "UDP", "CaptureCard", "MSS"]:
+        if mode not in ["NDI", "UDP", "CaptureCard", "CaptureCardGStreamer", "MSS"]:
             return
         
         # 如果切換模式，先斷開當前連接
@@ -100,43 +175,14 @@ class CaptureService:
                 return w, h
             except Exception:
                 return None, None
-        elif self.mode == "MSS":
-            if not self.mss_capture or not self.mss_capture.is_connected():
+        elif self.mode == "CaptureCardGStreamer":
+            if not self.capture_card_gstreamer_camera:
                 return None, None
-            return self.mss_capture.screen_width, self.mss_capture.screen_height
-        return None, None
-    
-    def get_frame_dimensions(self):
-        """
-        獲取當前模式的畫面尺寸（需要先連接）
-        
-        Returns:
-            tuple: (width, height) 或 (None, None) 如果無法獲取
-        """
-        if self.mode == "NDI":
-            if not self.ndi.is_connected():
-                return None, None
-            try:
-                frame = self.ndi.capture_frame()
-                if frame is None:
-                    return None, None
-                return frame.xres, frame.yres
-            except Exception:
-                return None, None
-        elif self.mode == "UDP":
-            if not self.is_connected():
-                return None, None
-            try:
-                receiver = self.udp_manager.get_receiver() if self.udp_manager else None
-                if not receiver:
-                    return None, None
-                frame = receiver.get_current_frame()
-                if frame is None or frame.size == 0:
-                    return None, None
-                h, w = frame.shape[:2]
-                return w, h
-            except Exception:
-                return None, None
+            # GStreamer version uses config values directly
+            from src.utils.config import config as global_config
+            width = int(getattr(global_config, "capture_width", 1920))
+            height = int(getattr(global_config, "capture_height", 1080))
+            return width, height
         elif self.mode == "MSS":
             if not self.mss_capture or not self.mss_capture.is_connected():
                 return None, None
@@ -171,22 +217,39 @@ class CaptureService:
             return False, str(e)
 
     def connect_capture_card(self, config):
-        """連接 CaptureCard 來源"""
-        self.mode = "CaptureCard"
-        
-        if not HAS_CAPTURECARD:
-            return False, "CaptureCard module not loaded"
-        
-        try:
-            from src.utils.config import config as global_config
-            # 使用全局 config 或傳入的 config
-            config_to_use = config if config else global_config
+        """連接 CaptureCard 來源（根據 mode 選擇 OpenCV 或 GStreamer 實現）"""
+        if self.mode == "CaptureCardGStreamer":
+            # Use GStreamer implementation
+            if not HAS_GSTREAMER:
+                return False, "GStreamer DLL not available. Please install GStreamer runtime."
             
-            self.capture_card_camera = create_capture_card_camera(config_to_use)
-            return True, None
-        except Exception as e:
-            log_print(f"[Capture] CaptureCard connection exception: {e}")
-            return False, str(e)
+            try:
+                from src.utils.config import config as global_config
+                # 使用全局 config 或傳入的 config
+                config_to_use = config if config else global_config
+                
+                self.capture_card_gstreamer_camera = create_capture_card_gstreamer_camera(config_to_use)
+                return True, None
+            except Exception as e:
+                log_print(f"[Capture] CaptureCardGStreamer connection exception: {e}")
+                return False, str(e)
+        else:
+            # Use OpenCV implementation (default)
+            self.mode = "CaptureCard"
+            
+            if not HAS_CAPTURECARD:
+                return False, "CaptureCard module not loaded"
+            
+            try:
+                from src.utils.config import config as global_config
+                # 使用全局 config 或傳入的 config
+                config_to_use = config if config else global_config
+                
+                self.capture_card_camera = create_capture_card_camera(config_to_use)
+                return True, None
+            except Exception as e:
+                log_print(f"[Capture] CaptureCard connection exception: {e}")
+                return False, str(e)
 
     def connect_mss(self, monitor_index=1, fov_x=320, fov_y=320):
         """連接 MSS 螢幕擷取"""
@@ -221,6 +284,10 @@ class CaptureService:
             if self.capture_card_camera:
                 self.capture_card_camera.stop()
                 self.capture_card_camera = None
+        elif self.mode == "CaptureCardGStreamer":
+            if self.capture_card_gstreamer_camera:
+                self.capture_card_gstreamer_camera.stop()
+                self.capture_card_gstreamer_camera = None
         elif self.mode == "MSS":
             if self.mss_capture:
                 self.mss_capture.disconnect()
@@ -241,6 +308,10 @@ class CaptureService:
             if not self.capture_card_camera:
                 return False
             return self.capture_card_camera.cap is not None and self.capture_card_camera.cap.isOpened()
+        elif self.mode == "CaptureCardGStreamer":
+            if not self.capture_card_gstreamer_camera:
+                return False
+            return self.capture_card_gstreamer_camera.pipeline is not None and self.capture_card_gstreamer_camera.running
         elif self.mode == "MSS":
             if not self.mss_capture:
                 return False
@@ -384,6 +455,24 @@ class CaptureService:
                 log_print(f"[Capture] CaptureCard read frame error: {e}")
                 return None
         
+        elif self.mode == "CaptureCardGStreamer":
+            if not self.capture_card_gstreamer_camera:
+                return None
+            
+            try:
+                # CaptureCardGStreamer guarantees BGR output before returning.
+                frame = self.capture_card_gstreamer_camera.get_latest_frame()
+                if frame is None:
+                    return None
+                
+                if frame.size == 0:
+                    return None
+                    
+                return frame
+            except Exception as e:
+                log_print(f"[Capture] CaptureCardGStreamer read frame error: {e}")
+                return None
+        
         elif self.mode == "MSS":
             if not self.mss_capture:
                 return None
@@ -438,6 +527,13 @@ class CaptureService:
                 self.capture_card_camera = None
         except Exception as e:
             log_print(f"[Capture] CaptureCard cleanup error (ignored): {e}")
+        
+        try:
+            if self.capture_card_gstreamer_camera:
+                self.capture_card_gstreamer_camera.stop()
+                self.capture_card_gstreamer_camera = None
+        except Exception as e:
+            log_print(f"[Capture] CaptureCardGStreamer cleanup error (ignored): {e}")
         
         try:
             if self.mss_capture:

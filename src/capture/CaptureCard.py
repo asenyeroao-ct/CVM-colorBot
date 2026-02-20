@@ -31,7 +31,7 @@ class CaptureCardCamera:
         self.backend_used = None
         self.active_fourcc = None
 
-        preferred_backends = [cv2.CAP_MSMF, cv2.CAP_DSHOW, cv2.CAP_ANY]
+        preferred_backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
 
         for backend in preferred_backends:
             self.cap = cv2.VideoCapture(self.device_index, backend)
@@ -106,12 +106,14 @@ class CaptureCardCamera:
                 log_print(f"[CaptureCard] Using available FPS: {actual_fps}")
                 self.active_fourcc = self._read_active_fourcc_label()
 
-            try:
-                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                buffer_size = self.cap.get(cv2.CAP_PROP_BUFFERSIZE)
-                log_print(f"[CaptureCard] Buffer size set to: {buffer_size}")
-            except Exception as e:
-                log_print(f"[CaptureCard] Failed to set buffer size: {e}")
+            # 不設置 buffer size，使用默認值以獲得更好的性能
+            # 設置為 1 會導致每次讀取都要等待新幀，嚴重限制 FPS
+            # try:
+            #     self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            #     buffer_size = self.cap.get(cv2.CAP_PROP_BUFFERSIZE)
+            #     log_print(f"[CaptureCard] Buffer size set to: {buffer_size}")
+            # except Exception as e:
+            #     log_print(f"[CaptureCard] Failed to set buffer size: {e}")
 
             self._try_enable_hardware_acceleration()
 
@@ -259,26 +261,22 @@ class CaptureCardCamera:
         if not self.cap or not self.cap.isOpened():
             return None
 
-        latest_frame = None
-        max_discard = 3
-
-        for _ in range(max_discard):
-            ret, frame = self.cap.read()
-            if ret and frame is not None:
-                latest_frame = frame
-            else:
-                break
-
-        if latest_frame is None:
+        # 只讀取一幀，避免多幀丟棄造成的延遲和性能損失
+        # 舊版使用單次讀取可以達到 240 FPS
+        ret, frame = self.cap.read()
+        if not ret or frame is None:
             return None
 
-        frame = latest_frame
         self._log_color_debug(frame, "raw")
 
+        # 只有在需要時才進行 BGR 轉換
+        # 如果已經是 3 通道 BGR 格式，則跳過轉換以提高性能
         if self.force_bgr:
-            frame = self._normalize_frame_to_bgr(frame, self.active_fourcc)
-            if frame is None or frame.size == 0:
-                return None
+            # 檢查是否已經是 BGR 格式（3 通道）
+            if not (frame.ndim == 3 and frame.shape[2] == 3):
+                frame = self._normalize_frame_to_bgr(frame, self.active_fourcc)
+                if frame is None or frame.size == 0:
+                    return None
             self._log_color_debug(frame, "normalized_bgr")
 
         base_w = int(getattr(self.config, "capture_width", 1920))
