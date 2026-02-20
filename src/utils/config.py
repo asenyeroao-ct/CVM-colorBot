@@ -243,6 +243,7 @@ class Config:
         self.show_distance_text = True
         # Persist UI collapsible section open/closed state per tab.
         self.ui_collapsible_states = {}
+        self.legacy_ui_mode = False
         
         # --- Capture Settings ---
         self.udp_ip = "127.0.0.1"
@@ -520,6 +521,7 @@ class Config:
             "show_crosshair": self.show_crosshair,
             "show_distance_text": self.show_distance_text,
             "ui_collapsible_states": self.ui_collapsible_states,
+            "legacy_ui_mode": self.legacy_ui_mode,
             
             # Capture Settings
             "udp_ip": self.udp_ip,
@@ -697,6 +699,7 @@ class Config:
             self.ui_collapsible_states = {str(k): bool(v) for k, v in raw_states.items()}
         else:
             self.ui_collapsible_states = {}
+        self.legacy_ui_mode = bool(getattr(self, "legacy_ui_mode", False))
 
         mode = str(getattr(self, "trigger_strafe_mode", "off")).strip().lower()
         if mode not in {"off", "auto", "manual_wait"}:

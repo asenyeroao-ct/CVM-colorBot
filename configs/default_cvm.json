@@ -190,6 +190,7 @@
     "show_target_count": false,
     "show_crosshair": false,
     "show_distance_text": false,
+    "legacy_ui_mode": false,
     "ui_collapsible_states": {
         "general:hardware_api": false,
         "general:capture_controls": false,

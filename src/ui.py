@@ -23,21 +23,54 @@ from src.utils.debug_logger import get_recent_logs, clear_logs, get_log_count, l
 from src.utils.updater import get_update_checker
 from src.ui_hsv_preview import HsvPreviewWindow
 
-# --- Theme constants (繁中 + English) ---
-COLOR_BG = "#121212"          # 主背景色 Main background
-COLOR_SIDEBAR = "#121212"     # 側欄背景 Sidebar background
-COLOR_SURFACE = "#1E1E1E"     # 卡片/面板色 Surface color
-COLOR_ACCENT = "#FFFFFF"      # 強調色 Accent color
-COLOR_ACCENT_HOVER = "#E0E0E0"
-COLOR_TEXT = "#E0E0E0"        # 主文字 Text
-COLOR_TEXT_DIM = "#757575"    # 次要文字 Secondary text
-COLOR_BORDER = "#2C2C2C"      # 邊框色 Border
-COLOR_DANGER = "#CF6679"      # 危險色 Danger
-COLOR_SUCCESS = "#4CAF50"
+# --- Theme constants (霓虹暗色主題 + Neon dark inspired by reference) ---
+THEME_PRESETS = {
+    "neon": {
+        "COLOR_BG": "#040B16",
+        "COLOR_SIDEBAR": "#030A14",
+        "COLOR_SURFACE": "#061325",
+        "COLOR_ACCENT": "#00FF41",
+        "COLOR_ACCENT_HOVER": "#45FF7A",
+        "COLOR_TEXT": "#B9D8FF",
+        "COLOR_TEXT_DIM": "#5F7FA8",
+        "COLOR_BORDER": "#0B7A2B",
+        "COLOR_DANGER": "#FF4D6D",
+        "COLOR_SUCCESS": "#00FF7F",
+        "COLOR_NAV_ACTIVE_BG": "#0A2315",
+        "COLOR_NAV_HOVER_BG": "#0A1A30",
+        "COLOR_MENU_GHOST": "#3A506E",
+        "FONT_MAIN": ("Consolas", 11),
+        "FONT_BOLD": ("Consolas", 11, "bold"),
+        "FONT_TITLE": ("Consolas", 18, "bold"),
+    },
+    "classic": {
+        "COLOR_BG": "#121212",
+        "COLOR_SIDEBAR": "#121212",
+        "COLOR_SURFACE": "#1E1E1E",
+        "COLOR_ACCENT": "#FFFFFF",
+        "COLOR_ACCENT_HOVER": "#E0E0E0",
+        "COLOR_TEXT": "#E0E0E0",
+        "COLOR_TEXT_DIM": "#757575",
+        "COLOR_BORDER": "#2C2C2C",
+        "COLOR_DANGER": "#CF6679",
+        "COLOR_SUCCESS": "#4CAF50",
+        "COLOR_NAV_ACTIVE_BG": "#2A2A2A",
+        "COLOR_NAV_HOVER_BG": "#262626",
+        "COLOR_MENU_GHOST": "#8A8A8A",
+        "FONT_MAIN": ("Roboto", 11),
+        "FONT_BOLD": ("Roboto", 11, "bold"),
+        "FONT_TITLE": ("Roboto", 18, "bold"),
+    },
+}
 
-FONT_MAIN = ("Roboto", 11)
-FONT_BOLD = ("Roboto", 11, "bold")
-FONT_TITLE = ("Roboto", 18, "bold")
+
+def _apply_theme_preset(theme_name):
+    theme = THEME_PRESETS.get(theme_name, THEME_PRESETS["neon"])
+    for key, value in theme.items():
+        globals()[key] = value
+
+
+_apply_theme_preset("neon")
 
 CVM_CONFIG_COMMENT_KEY = "_comment"
 CVM_CONFIG_COMMENT_VALUE = "This is CVM colorBot config."
@@ -175,15 +208,22 @@ class ViewerApp(ctk.CTk):
         # --- Window setup ---
         self.title("CVM colorBot")
         self.geometry("1280x950")
+        self._legacy_ui_mode = bool(getattr(config, "legacy_ui_mode", False))
+        _apply_theme_preset("classic" if self._legacy_ui_mode else "neon")
         
         # 注意: 若啟用 overrideredirect(True)，系統框線與 taskbar 行為可能不同
         # If you need normal window decorations, keep it commented out.
-        # self.overrideredirect(True)
+        self.overrideredirect(True)
+        self._is_maximized = False
+        self._restore_geometry = self.geometry()
+        self._taskbar_style_applied = False
         
         self.configure(fg_color=COLOR_BG)
         
         # 預設不置頂，避免影響其他 app/focus
         self.attributes('-topmost', False)
+        self.bind("<Map>", self._on_window_map)
+        self.after(50, self._ensure_taskbar_icon)
         
         # --- Core services ---
         self.tracker = tracker
@@ -276,7 +316,7 @@ class ViewerApp(ctk.CTk):
         self.content_frame = ctk.CTkScrollableFrame(
             self, fg_color="transparent",
             scrollbar_button_color=COLOR_BORDER,
-            scrollbar_button_hover_color=COLOR_SURFACE
+            scrollbar_button_hover_color=COLOR_ACCENT
         )
         self.content_frame.grid(row=1, column=1, sticky="nsew", padx=24, pady=20)
         
@@ -284,7 +324,7 @@ class ViewerApp(ctk.CTk):
 
     def _build_title_bar(self):
         """建立標題列 (title bar)。"""
-        self.title_bar = ctk.CTkFrame(self, height=30, fg_color=COLOR_BG, corner_radius=0)
+        self.title_bar = ctk.CTkFrame(self, height=30, fg_color=COLOR_BG, corner_radius=10)
         self.title_bar.grid(row=0, column=0, columnspan=2, sticky="ew")
         
         # Title and version
@@ -312,8 +352,8 @@ class ViewerApp(ctk.CTk):
         title_lbl = ctk.CTkLabel(
             title_container, 
             text="CVM colorBot", 
-            font=("Roboto", 10, "bold"),
-            text_color=COLOR_TEXT_DIM
+            font=("Consolas", 11, "bold"),
+            text_color=COLOR_ACCENT
         )
         title_lbl.pack(side="left")
         
@@ -322,7 +362,7 @@ class ViewerApp(ctk.CTk):
         self.version_lbl = ctk.CTkLabel(
             title_container,
             text=f"v{current_version}",
-            font=("Roboto", 9),
+            font=("Consolas", 9),
             text_color=COLOR_TEXT_DIM
         )
         self.version_lbl.pack(side="left", padx=(10, 0))
@@ -341,9 +381,37 @@ class ViewerApp(ctk.CTk):
             text_color=COLOR_TEXT_DIM,
             font=("Arial", 12),
             command=self._on_close,
-            corner_radius=0
+            corner_radius=8
         )
         close_btn.pack(side="right", padx=5)
+
+        self.maximize_btn = ctk.CTkButton(
+            self.title_bar,
+            text="[]",
+            width=30,
+            height=30,
+            fg_color="transparent",
+            hover_color=COLOR_SURFACE,
+            text_color=COLOR_TEXT_DIM,
+            font=("Arial", 10),
+            command=self._toggle_maximize,
+            corner_radius=8
+        )
+        self.maximize_btn.pack(side="right", padx=(0, 2))
+
+        self.minimize_btn = ctk.CTkButton(
+            self.title_bar,
+            text="_",
+            width=30,
+            height=30,
+            fg_color="transparent",
+            hover_color=COLOR_SURFACE,
+            text_color=COLOR_TEXT_DIM,
+            font=("Arial", 12),
+            command=self._on_minimize,
+            corner_radius=8
+        )
+        self.minimize_btn.pack(side="right", padx=(0, 2))
         
         # 視窗拖曳事件 Drag behavior
         self.title_bar.bind("<Button-1>", self.start_move)
@@ -356,33 +424,75 @@ class ViewerApp(ctk.CTk):
 
     def _build_sidebar(self):
         """建立側邊欄：navigation + status widgets。"""
-        self.sidebar = ctk.CTkFrame(self, width=165, fg_color=COLOR_BG, corner_radius=0)
+        sidebar_width = 165 if self._legacy_ui_mode else 250
+        self.sidebar = ctk.CTkFrame(self, width=sidebar_width, fg_color=COLOR_SIDEBAR, corner_radius=0)
         self.sidebar.grid(row=1, column=0, sticky="ns")
         self.sidebar.grid_propagate(False)
         
         # 分隔線 Separator
-        sep = ctk.CTkFrame(self.sidebar, width=1, fg_color=COLOR_BORDER)
+        sep_color = COLOR_BORDER if self._legacy_ui_mode else "#10263F"
+        sep = ctk.CTkFrame(self.sidebar, width=1, fg_color=sep_color)
         sep.pack(side="right", fill="y")
+
+        if not self._legacy_ui_mode:
+            brand = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+            brand.pack(fill="x", padx=16, pady=(14, 10))
+            ctk.CTkLabel(
+                brand,
+                text="CVM",
+                font=("Consolas", 30, "bold"),
+                text_color=COLOR_ACCENT,
+                anchor="w",
+            ).pack(anchor="w")
+            ctk.CTkLabel(
+                brand,
+                text="colorBot",
+                font=("Consolas", 11),
+                text_color=COLOR_TEXT_DIM,
+                anchor="w",
+            ).pack(anchor="w", pady=(0, 0))
+            ctk.CTkFrame(self.sidebar, height=1, fg_color="#10263F").pack(fill="x", padx=0, pady=(0, 10))
 
         # 導覽容器 Navigation container
         nav_container = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        nav_container.pack(fill="x", padx=20, pady=20)
+        nav_padx = 20 if self._legacy_ui_mode else 12
+        nav_pady = 20 if self._legacy_ui_mode else (0, 10)
+        nav_container.pack(fill="x", padx=nav_padx, pady=nav_pady)
         
         self.nav_buttons = {}
-        tabs = [
-            ("General", self._show_general_tab),
-            ("Main Aimbot", self._show_aimbot_tab),
-            ("Sec Aimbot", self._show_sec_aimbot_tab),
-            ("Trigger", self._show_tb_tab),
-            ("RCS", self._show_rcs_tab),
-            ("Config", self._show_config_tab),
-            ("Debug", self._show_debug_tab)
-        ]
-        
-        for text, cmd in tabs:
-            btn = self._create_nav_btn(nav_container, text, cmd)
-            self.nav_buttons[text] = btn
-            btn.pack(pady=2, fill="x")
+        self.nav_indicators = {}
+
+        if self._legacy_ui_mode:
+            tabs = [
+                ("General", self._show_general_tab),
+                ("Main Aimbot", self._show_aimbot_tab),
+                ("Sec Aimbot", self._show_sec_aimbot_tab),
+                ("Trigger", self._show_tb_tab),
+                ("RCS", self._show_rcs_tab),
+                ("Config", self._show_config_tab),
+                ("Debug", self._show_debug_tab),
+            ]
+            for text, cmd in tabs:
+                btn = self._create_nav_btn_legacy(nav_container, text, cmd)
+                self.nav_buttons[text] = btn
+                btn.pack(pady=2, fill="x")
+        else:
+            # 頂層項目 Top-level item
+            self._add_nav_item(nav_container, "General", self._show_general_tab, icon=">")
+
+            self._add_sidebar_group_label(nav_container, "Aimbot")
+            self._add_nav_item(nav_container, "Main Aimbot", self._show_aimbot_tab, icon=">")
+            self._add_nav_item(nav_container, "Sec Aimbot", self._show_sec_aimbot_tab, icon=">")
+            self._add_nav_item(nav_container, "RCS", self._show_rcs_tab, icon=">")
+
+            self._add_sidebar_group_label(nav_container, "Trigger")
+            self._add_nav_item(nav_container, "Trigger", self._show_tb_tab, icon=">")
+
+            self._add_sidebar_group_label(nav_container, "Miscellaneous")
+            self._add_nav_item(nav_container, "Config", self._show_config_tab, icon=">")
+            self._add_nav_item(nav_container, "Debug", self._show_debug_tab, icon=">")
+
+        self._set_nav_active(self._active_tab_name)
             
         # 側欄底部區塊 Bottom section
         bottom_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
@@ -392,15 +502,30 @@ class ViewerApp(ctk.CTk):
         self.theme_btn = ctk.CTkButton(
             bottom_frame,
             text="Dark Mode",
-            fg_color="transparent",
+            fg_color=COLOR_SURFACE,
             text_color=COLOR_TEXT_DIM,
             hover_color=COLOR_SURFACE,
             anchor="w",
             height=25,
             font=("Roboto", 10),
-            command=self._toggle_theme
+            command=self._toggle_theme,
+            corner_radius=8
         )
         self.theme_btn.pack(fill="x", pady=5)
+
+        self.ui_style_btn = ctk.CTkButton(
+            bottom_frame,
+            text=f"UI Style: {'Classic' if self._legacy_ui_mode else 'Neon'}",
+            fg_color=COLOR_SURFACE,
+            text_color=COLOR_TEXT_DIM,
+            hover_color=COLOR_SURFACE,
+            anchor="w",
+            height=25,
+            font=("Roboto", 10),
+            command=self._toggle_ui_style,
+            corner_radius=8,
+        )
+        self.ui_style_btn.pack(fill="x", pady=(0, 5))
         
         # 效能資訊 Performance labels
         self.fps_label = ctk.CTkLabel(
@@ -464,12 +589,13 @@ class ViewerApp(ctk.CTk):
             bottom_frame,
             text="Hardware Info",
             command=self._toggle_hardware_info_details,
-            fg_color="transparent",
+            fg_color=COLOR_SURFACE,
             hover_color=COLOR_SURFACE,
             text_color=COLOR_TEXT_DIM,
             font=("Roboto", 9),
             anchor="w",
             height=22,
+            corner_radius=8,
         )
         self.hardware_details_toggle.pack(fill="x", pady=(2, 0))
 
@@ -488,12 +614,13 @@ class ViewerApp(ctk.CTk):
             bottom_frame,
             text="Settings",
             command=self._open_settings_window,
-            fg_color="transparent",
+            fg_color=COLOR_SURFACE,
             hover_color=COLOR_BORDER,
             text_color=COLOR_TEXT,
             font=("Roboto", 11),
             anchor="w",
-            height=30
+            height=30,
+            corner_radius=8
         )
         settings_btn.pack(fill="x", pady=(10, 0))
 
@@ -506,26 +633,87 @@ class ViewerApp(ctk.CTk):
             msg = msg[: max_chars - 3] + "..."
         self.status_indicator.configure(text=msg, text_color=text_color)
 
-    def _create_nav_btn(self, parent, text, command):
+    def _create_nav_btn(self, parent, text, command, icon=">"):
+        return ctk.CTkButton(
+            parent,
+            text=f"{icon}  {text}",
+            height=38,
+            fg_color="#081425",
+            text_color=COLOR_TEXT,
+            hover_color=COLOR_NAV_HOVER_BG,
+            anchor="w",
+            font=("Consolas", 14),
+            command=lambda: self._handle_nav_click(text, command),
+            corner_radius=5,
+            border_width=1,
+            border_color="#0E223A"
+        )
+
+    def _create_nav_btn_legacy(self, parent, text, command):
         return ctk.CTkButton(
             parent,
             text=text,
-            height=35,
+            height=32,
             fg_color="transparent",
-            text_color=COLOR_TEXT_DIM,
-            hover_color=None, # 保持透明背景，不做 hover fill
+            text_color=COLOR_TEXT,
+            hover_color=COLOR_SURFACE,
             anchor="w",
-            font=FONT_BOLD,
-            command=lambda: self._handle_nav_click(text, command)
+            font=FONT_MAIN,
+            command=lambda: self._handle_nav_click(text, command),
+            corner_radius=6,
+            border_width=1,
+            border_color=COLOR_BORDER,
         )
+
+    def _add_sidebar_group_label(self, parent, text):
+        ctk.CTkLabel(
+            parent,
+            text=text.upper(),
+            font=("Consolas", 11, "bold"),
+            text_color=COLOR_TEXT_DIM,
+            anchor="w",
+        ).pack(fill="x", pady=(10, 5))
+
+    def _add_sidebar_hint_item(self, parent, text):
+        ctk.CTkLabel(
+            parent,
+            text=f"    {text}",
+            font=("Consolas", 13),
+            text_color=COLOR_MENU_GHOST,
+            anchor="w",
+        ).pack(fill="x", pady=(0, 3))
+
+    def _add_nav_item(self, parent, text, command, icon=">"):
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=3)
+
+        indicator = ctk.CTkFrame(row, width=3, height=30, fg_color="transparent", corner_radius=2)
+        indicator.pack(side="left", fill="y", padx=(0, 6))
+
+        btn = self._create_nav_btn(row, text, command, icon=icon)
+        btn.pack(side="left", fill="x", expand=True)
+
+        self.nav_buttons[text] = btn
+        self.nav_indicators[text] = indicator
+        return btn
+
+    def _set_nav_active(self, active_text):
+        for btn_text, btn in self.nav_buttons.items():
+            indicator = self.nav_indicators.get(btn_text)
+            if btn_text == active_text:
+                btn.configure(text_color=COLOR_ACCENT, fg_color=COLOR_NAV_ACTIVE_BG, border_color=COLOR_BORDER)
+                if indicator is not None:
+                    indicator.configure(fg_color=COLOR_ACCENT)
+            else:
+                inactive_bg = "transparent" if self._legacy_ui_mode else "#081425"
+                inactive_border = COLOR_BORDER if self._legacy_ui_mode else "#0E223A"
+                btn.configure(text_color=COLOR_TEXT, fg_color=inactive_bg, border_color=inactive_border)
+                if indicator is not None:
+                    indicator.configure(fg_color="transparent")
 
     def _handle_nav_click(self, text, command):
         self._active_tab_name = str(text)
-        for btn_text, btn in self.nav_buttons.items():
-            if btn_text == text:
-                btn.configure(text_color=COLOR_ACCENT)  # 當前 tab 只高亮文字
-            else:
-                btn.configure(text_color=COLOR_TEXT_DIM)
+        self._set_nav_active(self._active_tab_name)
         command()
 
     def _clear_content(self):
@@ -545,6 +733,40 @@ class ViewerApp(ctk.CTk):
         else:
             ctk.set_appearance_mode("Dark")
             self.theme_btn.configure(text="Dark Mode")
+
+    def _toggle_ui_style(self):
+        self._legacy_ui_mode = not self._legacy_ui_mode
+        config.legacy_ui_mode = bool(self._legacy_ui_mode)
+        self._rebuild_layout_for_ui_style()
+
+    def _rebuild_layout_for_ui_style(self):
+        tab_name = str(getattr(self, "_active_tab_name", "General"))
+        self._cancel_binding_capture()
+
+        for attr in ("title_bar", "sidebar", "content_frame"):
+            widget = getattr(self, attr, None)
+            if widget is not None:
+                try:
+                    widget.destroy()
+                except Exception:
+                    pass
+
+        _apply_theme_preset("classic" if self._legacy_ui_mode else "neon")
+        self.configure(fg_color=COLOR_BG)
+        self._build_layout()
+
+        tab_map = {
+            "General": self._show_general_tab,
+            "Main Aimbot": self._show_aimbot_tab,
+            "Sec Aimbot": self._show_sec_aimbot_tab,
+            "Trigger": self._show_tb_tab,
+            "RCS": self._show_rcs_tab,
+            "Config": self._show_config_tab,
+            "Debug": self._show_debug_tab,
+        }
+        tab_fn = tab_map.get(tab_name)
+        if tab_fn is not None and tab_name != "General":
+            self._handle_nav_click(tab_name, tab_fn)
 
     # --- 各分頁內容 Tabs ---
 
@@ -805,9 +1027,9 @@ class ViewerApp(ctk.CTk):
             text="Enable Button Mask",
             variable=self.var_button_mask_enabled,
             command=self._on_button_mask_enabled_changed,
-            fg_color=COLOR_BORDER,
-            progress_color=COLOR_TEXT,
-            button_color=COLOR_TEXT,
+            fg_color=COLOR_SURFACE,
+            progress_color=COLOR_ACCENT,
+            button_color=COLOR_ACCENT,
             button_hover_color=COLOR_ACCENT_HOVER,
             text_color=COLOR_TEXT_DIM,
             font=("Roboto", 11),
@@ -848,9 +1070,9 @@ class ViewerApp(ctk.CTk):
                 text=label,
                 variable=var,
                 command=lambda k=key, v=var: self._on_button_mask_changed(k, v),
-                fg_color=COLOR_BORDER,
-                progress_color=COLOR_TEXT, # 绲变竴榛戠櫧棰ㄦ牸
-                button_color=COLOR_TEXT,
+                fg_color=COLOR_SURFACE,
+                progress_color=COLOR_ACCENT,
+                button_color=COLOR_ACCENT,
                 button_hover_color=COLOR_ACCENT_HOVER,
                 text_color=COLOR_TEXT_DIM,
                 font=("Roboto", 10),
@@ -1740,9 +1962,9 @@ class ViewerApp(ctk.CTk):
                 text="",
                 variable=self.var_ndi_fov_enabled,
                 command=self._on_ndi_fov_enabled_changed,
-                fg_color=COLOR_BORDER,
-                progress_color=COLOR_TEXT,
-                button_color=COLOR_TEXT,
+                fg_color=COLOR_SURFACE,
+                progress_color=COLOR_ACCENT,
+                button_color=COLOR_ACCENT,
                 button_hover_color=COLOR_ACCENT_HOVER,
                 width=50,
                 height=20
@@ -1766,8 +1988,8 @@ class ViewerApp(ctk.CTk):
             
             self.ndi_fov_slider = ctk.CTkSlider(
                 fov_frame, from_=16, to=1920, number_of_steps=100,
-                fg_color=COLOR_BORDER, progress_color=COLOR_TEXT,
-                button_color=COLOR_TEXT, button_hover_color=COLOR_ACCENT,
+                fg_color=COLOR_SURFACE, progress_color=COLOR_ACCENT,
+                button_color=COLOR_ACCENT, button_hover_color=COLOR_ACCENT_HOVER,
                 height=10,
                 command=self._on_ndi_fov_slider_changed
             )
@@ -1831,9 +2053,9 @@ class ViewerApp(ctk.CTk):
                 text="",
                 variable=self.var_udp_fov_enabled,
                 command=self._on_udp_fov_enabled_changed,
-                fg_color=COLOR_BORDER,
-                progress_color=COLOR_TEXT,
-                button_color=COLOR_TEXT,
+                fg_color=COLOR_SURFACE,
+                progress_color=COLOR_ACCENT,
+                button_color=COLOR_ACCENT,
                 button_hover_color=COLOR_ACCENT_HOVER,
                 width=50,
                 height=20
@@ -1857,8 +2079,8 @@ class ViewerApp(ctk.CTk):
             
             self.udp_fov_slider = ctk.CTkSlider(
                 fov_frame, from_=16, to=1920, number_of_steps=100,
-                fg_color=COLOR_BORDER, progress_color=COLOR_TEXT,
-                button_color=COLOR_TEXT, button_hover_color=COLOR_ACCENT,
+                fg_color=COLOR_SURFACE, progress_color=COLOR_ACCENT,
+                button_color=COLOR_ACCENT, button_hover_color=COLOR_ACCENT_HOVER,
                 height=10,
                 command=self._on_udp_fov_slider_changed
             )
@@ -2027,8 +2249,8 @@ class ViewerApp(ctk.CTk):
             
             self.mss_fov_x_slider = ctk.CTkSlider(
                 fov_x_frame, from_=16, to=1920, number_of_steps=100,
-                fg_color=COLOR_BORDER, progress_color=COLOR_TEXT,
-                button_color=COLOR_TEXT, button_hover_color=COLOR_ACCENT,
+                fg_color=COLOR_SURFACE, progress_color=COLOR_ACCENT,
+                button_color=COLOR_ACCENT, button_hover_color=COLOR_ACCENT_HOVER,
                 height=10,
                 command=self._on_mss_fov_x_slider_changed
             )
@@ -2054,8 +2276,8 @@ class ViewerApp(ctk.CTk):
             
             self.mss_fov_y_slider = ctk.CTkSlider(
                 fov_y_frame, from_=16, to=1080, number_of_steps=100,
-                fg_color=COLOR_BORDER, progress_color=COLOR_TEXT,
-                button_color=COLOR_TEXT, button_hover_color=COLOR_ACCENT,
+                fg_color=COLOR_SURFACE, progress_color=COLOR_ACCENT,
+                button_color=COLOR_ACCENT, button_hover_color=COLOR_ACCENT_HOVER,
                 height=10,
                 command=self._on_mss_fov_y_slider_changed
             )
@@ -3291,6 +3513,10 @@ class ViewerApp(ctk.CTk):
         # Clear log button
         clear_btn = self._add_text_button(control_frame, "Clear Log", self._clear_debug_log)
         clear_btn.pack(side="left", padx=(0, 10))
+
+        # WebMenu link button
+        webmenu_btn = self._add_text_button(control_frame, "Open WebMenu", self._open_webmenu)
+        webmenu_btn.pack(side="left", padx=(0, 10))
         
         # Log count label
         self.debug_log_count_label = ctk.CTkLabel(
@@ -3311,6 +3537,30 @@ class ViewerApp(ctk.CTk):
             corner_radius=0
         )
         self.debug_log_textbox.pack(fill="both", expand=True, pady=10)
+
+    def _open_webmenu(self):
+        ensure_running = getattr(self, "_ensure_webmenu_running", None)
+        if callable(ensure_running):
+            ok = bool(ensure_running())
+            if not ok:
+                log_print("[UI] WebMenu failed to start.")
+                return
+
+        host = str(getattr(config, "webmenu_host", "127.0.0.1")).strip() or "127.0.0.1"
+        if host in ("0.0.0.0", "::"):
+            host = "127.0.0.1"
+        try:
+            port = int(getattr(config, "webmenu_port", 8765))
+        except Exception:
+            port = 8765
+        port = max(1, min(65535, port))
+        url = f"http://{host}:{port}"
+        try:
+            webbrowser.open(url, new=2)
+            if not bool(getattr(config, "webmenu_enabled", False)):
+                log_print(f"[UI] WebMenu is disabled in config. URL opened anyway: {url}")
+        except Exception as e:
+            log_print(f"[UI] Failed to open WebMenu URL: {e}")
         
         # Initialize log display
         self._update_debug_log()
@@ -3421,25 +3671,32 @@ class ViewerApp(ctk.CTk):
         is_open = [initial_open_state]
         arrow_text = "▼" if initial_open_state else "▶"
         
-        header = ctk.CTkFrame(container, fg_color=COLOR_SURFACE, corner_radius=4, height=30)
+        header = ctk.CTkFrame(
+            container,
+            fg_color=COLOR_SURFACE,
+            corner_radius=8,
+            height=32,
+            border_width=1,
+            border_color=COLOR_BORDER,
+        )
         header.pack(fill="x")
         header.pack_propagate(False)
         
         arrow_label = ctk.CTkLabel(
-            header, text=arrow_text, font=("Roboto", 10), text_color=COLOR_TEXT_DIM,
+            header, text=arrow_text, font=("Consolas", 10), text_color=COLOR_ACCENT,
             width=20
         )
         arrow_label.pack(side="left", padx=(8, 0))
         
         title_label = ctk.CTkLabel(
-            header, text=title.upper(), font=("Roboto", 10, "bold"), text_color=COLOR_TEXT_DIM
+            header, text=title.upper(), font=("Consolas", 10, "bold"), text_color=COLOR_TEXT
         )
         title_label.pack(side="left", padx=(4, 0))
         
         # 濡傛灉鏈?tooltip 鏂囧瓧锛屾坊鍔犲晱铏熷湒妯?
         if tooltip_text:
             tooltip_icon = ctk.CTkLabel(
-                header, text="?", font=("Roboto", 10, "bold"), text_color=COLOR_TEXT_DIM,
+                header, text="?", font=("Consolas", 10, "bold"), text_color=COLOR_ACCENT,
                 width=20, cursor="hand2"
             )
             tooltip_icon.pack(side="left", padx=(8, 0))
@@ -3490,8 +3747,8 @@ class ViewerApp(ctk.CTk):
         
         slider = ctk.CTkSlider(
             frame, from_=min_val, to=max_val, number_of_steps=100,
-            fg_color=COLOR_BORDER, progress_color=COLOR_TEXT,
-            button_color=COLOR_TEXT, button_hover_color=COLOR_ACCENT,
+            fg_color=COLOR_SURFACE, progress_color=COLOR_ACCENT,
+            button_color=COLOR_ACCENT, button_hover_color=COLOR_ACCENT_HOVER,
             height=10,
             command=lambda v: self._on_slider_changed(v, val_entry, key, command, is_float, slider, min_val, max_val)
         )
@@ -3529,10 +3786,10 @@ class ViewerApp(ctk.CTk):
             font=FONT_MAIN,
             text_color=COLOR_TEXT,
             fg_color=COLOR_SURFACE,
-            hover_color=COLOR_BORDER,
+            hover_color=COLOR_NAV_HOVER_BG,
             border_width=1,
             border_color=COLOR_BORDER,
-            corner_radius=0,
+            corner_radius=8,
             height=28,
             width=180,
         )
@@ -3543,8 +3800,8 @@ class ViewerApp(ctk.CTk):
         """鍦ㄦ寚瀹?parent frame 涓坊鍔?Switch"""
         switch = ctk.CTkSwitch(
             parent, text=text, variable=variable, command=command,
-            progress_color=COLOR_TEXT, fg_color=COLOR_BORDER,
-            button_color=COLOR_TEXT, button_hover_color=COLOR_TEXT,
+            progress_color=COLOR_ACCENT, fg_color=COLOR_SURFACE,
+            button_color=COLOR_ACCENT, button_hover_color=COLOR_ACCENT_HOVER,
             font=FONT_MAIN, text_color=COLOR_TEXT
         )
         switch.pack(anchor="w", pady=5)
@@ -3559,10 +3816,10 @@ class ViewerApp(ctk.CTk):
             text=text, 
             variable=variable, 
             command=command,
-            progress_color=COLOR_TEXT, # 榛戠櫧棰ㄦ牸
-            fg_color=COLOR_BORDER,
-            button_color=COLOR_TEXT,
-            button_hover_color=COLOR_TEXT,
+            progress_color=COLOR_ACCENT,
+            fg_color=COLOR_SURFACE,
+            button_color=COLOR_ACCENT,
+            button_hover_color=COLOR_ACCENT_HOVER,
             font=FONT_MAIN,
             text_color=COLOR_TEXT
         )
@@ -3600,10 +3857,10 @@ class ViewerApp(ctk.CTk):
             from_=min_val, 
             to=max_val, 
             number_of_steps=100,
-            fg_color=COLOR_BORDER,
-            progress_color=COLOR_TEXT,
-            button_color=COLOR_TEXT,
-            button_hover_color=COLOR_ACCENT,
+            fg_color=COLOR_SURFACE,
+            progress_color=COLOR_ACCENT,
+            button_color=COLOR_ACCENT,
+            button_hover_color=COLOR_ACCENT_HOVER,
             height=10,
             command=lambda v: self._on_slider_changed(v, val_entry, key, command, is_float, slider, min_val, max_val)
         )
@@ -3703,10 +3960,10 @@ class ViewerApp(ctk.CTk):
             from_=min_val,
             to=max_val,
             number_of_steps=100 if is_float else int(max_val - min_val),
-            fg_color=COLOR_BORDER,
-            progress_color=COLOR_TEXT,
-            button_color=COLOR_TEXT,
-            button_hover_color=COLOR_ACCENT,
+            fg_color=COLOR_SURFACE,
+            progress_color=COLOR_ACCENT,
+            button_color=COLOR_ACCENT,
+            button_hover_color=COLOR_ACCENT_HOVER,
             height=10,
             command=lambda v: self._on_range_slider_changed(
                 v, "min", min_entry, max_entry, min_slider, max_slider, key, command, is_float, min_val, max_val
@@ -3720,7 +3977,7 @@ class ViewerApp(ctk.CTk):
             from_=min_val,
             to=max_val,
             number_of_steps=100 if is_float else int(max_val - min_val),
-            fg_color=COLOR_BORDER,
+            fg_color=COLOR_SURFACE,
             progress_color=COLOR_ACCENT,
             button_color=COLOR_ACCENT,
             button_hover_color=COLOR_ACCENT_HOVER,
@@ -3899,10 +4156,13 @@ class ViewerApp(ctk.CTk):
             command=command,
             fg_color=COLOR_SURFACE,
             button_color=COLOR_BORDER,
-            button_hover_color=COLOR_BORDER,
+            button_hover_color=COLOR_ACCENT,
             text_color=COLOR_TEXT,
             font=FONT_MAIN,
-            corner_radius=0,
+            dropdown_fg_color="#081425",
+            dropdown_hover_color=COLOR_NAV_HOVER_BG,
+            dropdown_text_color=COLOR_TEXT,
+            corner_radius=8,
             height=28,
             width=180
         )
@@ -3927,14 +4187,14 @@ class ViewerApp(ctk.CTk):
         return ctk.CTkButton(
             parent,
             text=text,
-            font=("Roboto", 10, "bold"),
+            font=("Consolas", 10, "bold"),
             text_color=COLOR_TEXT,
-            fg_color="transparent",
+            fg_color=COLOR_SURFACE,
             border_width=1,
             border_color=COLOR_BORDER,
-            hover_color=COLOR_SURFACE,
+            hover_color=COLOR_NAV_HOVER_BG,
             height=28,
-            corner_radius=0,
+            corner_radius=8,
             command=command
         )
 
@@ -3945,9 +4205,88 @@ class ViewerApp(ctk.CTk):
         self._y = event.y
 
     def do_move(self, event):
+        if self._is_maximized:
+            return
         x = self.winfo_pointerx() - self._x
         y = self.winfo_pointery() - self._y
         self.geometry(f"+{x}+{y}")
+
+    def _on_window_map(self, _event=None):
+        if self.state() == "normal":
+            self.overrideredirect(True)
+            if not self._taskbar_style_applied:
+                self.after(0, self._ensure_taskbar_icon)
+
+    def _on_minimize(self):
+        self.overrideredirect(False)
+        self.iconify()
+
+    def _toggle_maximize(self):
+        if self._is_maximized:
+            if self._restore_geometry:
+                self.geometry(self._restore_geometry)
+            self._is_maximized = False
+            return
+
+        self._restore_geometry = self.geometry()
+        self.update_idletasks()
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        self.geometry(f"{screen_w}x{screen_h}+0+0")
+        self._is_maximized = True
+
+    def _ensure_taskbar_icon(self):
+        """在使用 overrideredirect 時強制顯示工作列圖示 / Force taskbar presence on Windows when using overrideredirect."""
+        if os.name != "nt" or self._taskbar_style_applied:
+            return
+        try:
+            user32 = ctypes.windll.user32
+            hwnd = self.winfo_id()
+            GA_ROOT = 2
+            root_hwnd = user32.GetAncestor(hwnd, GA_ROOT)
+            if root_hwnd:
+                hwnd = root_hwnd
+
+            GWL_EXSTYLE = -20
+            WS_EX_TOOLWINDOW = 0x00000080
+            WS_EX_APPWINDOW = 0x00040000
+            SWP_NOSIZE = 0x0001
+            SWP_NOMOVE = 0x0002
+            SWP_NOZORDER = 0x0004
+            SWP_FRAMECHANGED = 0x0020
+
+            exstyle = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            exstyle = (exstyle & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
+            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, exstyle)
+            user32.SetWindowPos(
+                hwnd,
+                0,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED
+            )
+
+            # 一次性 shell 刷新（盡量避免可見閃爍）/ One-time shell refresh without visible blink.
+            alpha_before = None
+            try:
+                alpha_before = float(self.attributes("-alpha"))
+            except Exception:
+                alpha_before = None
+            try:
+                if alpha_before is not None:
+                    self.attributes("-alpha", 0.0)
+                self.withdraw()
+                self.update_idletasks()
+                self.deiconify()
+            finally:
+                if alpha_before is not None:
+                    self.after(20, lambda: self.attributes("-alpha", alpha_before))
+
+            self._taskbar_style_applied = True
+        except Exception as e:
+            log_print(f"[UI] Failed to force taskbar icon: {e}")
 
     def _register_slider(self, key, slider, entry, vmin, vmax, is_float):
         self._slider_widgets[key] = {"slider": slider, "entry": entry, "min": vmin, "max": vmax, "is_float": is_float}
@@ -6297,11 +6636,7 @@ class ViewerApp(ctk.CTk):
         # 閲嶆柊娓叉煋 Aimbot tab 浠ラ’绀哄皪鎳夋ā寮忕殑鍙冩暩
         self._show_aimbot_tab()
         # 閲嶆柊楂樹寒姝ｇ⒑鐨勫皫鑸寜閳?
-        for name, btn in self.nav_buttons.items():
-            if name == "Main Aimbot":
-                btn.configure(text_color=COLOR_ACCENT)
-            else:
-                btn.configure(text_color=COLOR_TEXT_DIM)
+        self._set_nav_active("Main Aimbot")
     
     def _on_mode_sec_selected(self, val):
         config.mode_sec = val
@@ -6309,11 +6644,7 @@ class ViewerApp(ctk.CTk):
         # 閲嶆柊娓叉煋 Sec Aimbot tab 浠ラ’绀哄皪鎳夋ā寮忕殑鍙冩暩
         self._show_sec_aimbot_tab()
         # 閲嶆柊楂樹寒姝ｇ⒑鐨勫皫鑸寜閳?
-        for name, btn in self.nav_buttons.items():
-            if name == "Sec Aimbot":
-                btn.configure(text_color=COLOR_ACCENT)
-            else:
-                btn.configure(text_color=COLOR_TEXT_DIM)
+        self._set_nav_active("Sec Aimbot")
     
     # Sec Aimbot Callbacks
     def _on_normal_x_speed_sec_changed(self, val): 
@@ -7241,9 +7572,9 @@ class SettingsWindow(ctk.CTkToplevel):
             parent,
             text=text,
             variable=variable,
-            fg_color=COLOR_BORDER,
-            progress_color=COLOR_TEXT,
-            button_color=COLOR_TEXT,
+            fg_color=COLOR_SURFACE,
+            progress_color=COLOR_ACCENT,
+            button_color=COLOR_ACCENT,
             button_hover_color=COLOR_ACCENT_HOVER,
             text_color=COLOR_TEXT,
             font=("Roboto", 12)
@@ -7255,9 +7586,9 @@ class SettingsWindow(ctk.CTkToplevel):
             parent,
             text=text,
             variable=variable,
-            fg_color=COLOR_BORDER,
-            progress_color=COLOR_TEXT,
-            button_color=COLOR_TEXT,
+            fg_color=COLOR_SURFACE,
+            progress_color=COLOR_ACCENT,
+            button_color=COLOR_ACCENT,
             button_hover_color=COLOR_ACCENT_HOVER,
             text_color=COLOR_TEXT,
             font=("Roboto", 12)
