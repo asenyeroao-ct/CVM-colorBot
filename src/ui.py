@@ -157,6 +157,7 @@ RGB_TRIGGER_PROFILE_DISPLAY = {
     "red": "Red",
     "yellow": "Yellow",
     "purple": "Purple",
+    "custom": "Custom",
 }
 
 TRIGGER_STRAFE_MODE_DISPLAY = {
@@ -4348,6 +4349,7 @@ class ViewerApp(ctk.CTk):
                             "red": "Red",
                             "yellow": "Yellow",
                             "purple": "Purple",
+                            "custom": "Custom",
                         }
                         self._set_option_value(k, rgb_profile_display.get(str(v).lower(), "Purple"))
                     elif k == "trigger_activation_type":
@@ -6351,8 +6353,14 @@ class ViewerApp(ctk.CTk):
             "Red": "red",
             "Yellow": "yellow",
             "Purple": "purple",
+            "Custom": "custom",
         }
         config.rgb_color_profile = rgb_profile_map.get(val, "purple")
+        # Reuse the same global custom HSV profile used by main color selection.
+        if config.rgb_color_profile == "custom":
+            config.color = "custom"
+            if hasattr(self, "tracker"):
+                self.tracker.color = "custom"
         if hasattr(self, "tracker"):
             self.tracker.rgb_color_profile = config.rgb_color_profile
         self._log_config(f"RGB Preset: {val}")
