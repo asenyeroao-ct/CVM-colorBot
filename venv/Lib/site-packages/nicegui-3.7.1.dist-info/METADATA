@@ -1,0 +1,209 @@
+Metadata-Version: 2.4
+Name: nicegui
+Version: 3.7.1
+Summary: Create web-based user interfaces with Python. The nice way.
+License-Expression: MIT
+License-File: LICENSE
+Keywords: gui,ui,web,interface,live
+Author: Zauberzeug GmbH
+Author-email: info@zauberzeug.com
+Requires-Python: >=3.10,<4
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Provides-Extra: altair
+Provides-Extra: anywidget
+Provides-Extra: highcharts
+Provides-Extra: matplotlib
+Provides-Extra: native
+Provides-Extra: plotly
+Provides-Extra: redis
+Requires-Dist: Pygments (>=2.15.1,<3.0.0)
+Requires-Dist: aiofiles (>=23.1.0)
+Requires-Dist: aiohttp (>=3.13.3)
+Requires-Dist: altair (>=6.0.0) ; extra == "altair"
+Requires-Dist: anywidget (>=0.9.21) ; extra == "anywidget"
+Requires-Dist: certifi (>=2024.7.4)
+Requires-Dist: docutils (>=0.19.0)
+Requires-Dist: fastapi (>=0.109.1,!=0.123.5)
+Requires-Dist: fonttools (>=4.60.2) ; extra == "matplotlib"
+Requires-Dist: h11 (>=0.16.0)
+Requires-Dist: httpx (>=0.24.0)
+Requires-Dist: ifaddr (>=0.2.0)
+Requires-Dist: itsdangerous (>=2.1.2,<3)
+Requires-Dist: jinja2 (>=3.1.6,<4)
+Requires-Dist: markdown2 (>=2.4.7,!=2.4.11)
+Requires-Dist: matplotlib (>=3.5.0,<4) ; extra == "matplotlib"
+Requires-Dist: nicegui-highcharts (>=2.0.2,<3) ; extra == "highcharts"
+Requires-Dist: orjson (>=3.11.5) ; platform_machine != "i386" and platform_machine != "i686" and platform_python_implementation != "PyPy"
+Requires-Dist: plotly (>=5.13,<7.0) ; extra == "plotly"
+Requires-Dist: pydantic-core (>=2.35.0)
+Requires-Dist: python-engineio (>=4.12.0)
+Requires-Dist: python-multipart (>=0.0.18)
+Requires-Dist: python-socketio[asyncio-client] (>=5.14.0)
+Requires-Dist: pywebview (>=5.0.1,<7) ; extra == "native"
+Requires-Dist: redis (>=4.0.0) ; extra == "redis"
+Requires-Dist: starlette (>=0.49.1)
+Requires-Dist: typing-extensions (>=4.0.0)
+Requires-Dist: uvicorn[standard] (>=0.22.0)
+Requires-Dist: watchfiles (>=0.18.1)
+Project-URL: Repository, https://github.com/zauberzeug/nicegui
+Description-Content-Type: text/markdown
+
+<a href="https://nicegui.io/#about">
+  <img src="https://raw.githubusercontent.com/zauberzeug/nicegui/main/screenshot.png"
+    width="200" align="right" alt="Try online!" />
+</a>
+
+# NiceGUI
+
+NiceGUI is an easy-to-use, Python-based UI framework, which shows up in your web browser.
+You can create buttons, dialogs, Markdown, 3D scenes, plots and much more.
+
+It is great for micro web apps, dashboards, robotics projects, smart home solutions and similar use cases.
+You can also use it in development, for example when tweaking/configuring a machine learning algorithm or tuning motor controllers.
+
+NiceGUI is available as [PyPI package](https://pypi.org/project/nicegui/), [Docker image](https://hub.docker.com/r/zauberzeug/nicegui) and on [conda-forge](https://anaconda.org/conda-forge/nicegui) as well as [GitHub](https://github.com/zauberzeug/nicegui).
+
+[![PyPI](https://img.shields.io/pypi/v/nicegui?color=dark-green)](https://pypi.org/project/nicegui/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/nicegui?color=dark-green)](https://pypi.org/project/nicegui/)
+[![Conda version](https://img.shields.io/conda/v/conda-forge/nicegui?color=green&label=conda-forge)](https://anaconda.org/conda-forge/nicegui)
+[![Conda downloads](https://img.shields.io/conda/dn/conda-forge/nicegui?color=green&label=downloads)](https://anaconda.org/conda-forge/nicegui)
+[![Docker pulls](https://img.shields.io/docker/pulls/zauberzeug/nicegui)](https://hub.docker.com/r/zauberzeug/nicegui)<br />
+[![GitHub license](https://img.shields.io/github/license/zauberzeug/nicegui?color=orange)](https://github.com/zauberzeug/nicegui/blob/main/LICENSE)
+[![GitHub commit activity](https://img.shields.io/github/commit-activity/m/zauberzeug/nicegui)](https://github.com/zauberzeug/nicegui/graphs/commit-activity)
+[![GitHub issues](https://img.shields.io/github/issues/zauberzeug/nicegui?color=blue)](https://github.com/zauberzeug/nicegui/issues)
+[![GitHub forks](https://img.shields.io/github/forks/zauberzeug/nicegui)](https://github.com/zauberzeug/nicegui/network)
+[![GitHub stars](https://img.shields.io/github/stars/zauberzeug/nicegui)](https://github.com/zauberzeug/nicegui/stargazers)
+[![DOI](https://zenodo.org/badge/365250183.svg)](https://doi.org/10.5281/zenodo.7785516)
+
+## Features
+
+- browser-based graphical user interface
+- implicit reload on code change
+- acts as webserver (accessed by the browser) or in native mode (eg. desktop window)
+- standard GUI elements like label, button, checkbox, switch, slider, input, file upload, ...
+- simple grouping with rows, columns, cards and dialogs
+- general-purpose HTML and Markdown elements
+- powerful high-level elements to
+  - plot graphs and charts,
+  - render 3D scenes,
+  - get steering events via virtual joysticks
+  - annotate and overlay images
+  - interact with tables
+  - navigate foldable tree structures
+  - embed video and audio files
+- built-in timer to refresh data in intervals (even every 10 ms)
+- straight-forward data binding and refreshable functions to write even less code
+- notifications, dialogs and menus to provide state of the art user interaction
+- shared and individual web pages
+- easy-to-use per-user and general persistence
+- ability to add custom routes and data responses
+- capture keyboard input for global shortcuts etc.
+- customize look by defining primary, secondary and accent colors
+- live-cycle events and session data
+- runs in Jupyter Notebooks and allows Python's interactive mode
+- auto-complete support for Tailwind CSS
+- SVG, Base64 and emoji favicon support
+- testing framework based on pytest
+
+## Installation
+
+```bash
+python3 -m pip install nicegui
+```
+
+## Usage
+
+Write your nice GUI in a file `main.py`:
+
+```python
+from nicegui import ui
+
+ui.label('Hello NiceGUI!')
+ui.button('BUTTON', on_click=lambda: ui.notify('button was pressed'))
+
+ui.run()
+```
+
+Launch it with:
+
+```bash
+python3 main.py
+```
+
+The GUI is now available through http://localhost:8080/ in your browser.
+Note: NiceGUI will automatically reload the page when you modify the code.
+
+## Documentation and Examples
+
+The documentation is hosted at [https://nicegui.io/documentation](https://nicegui.io/documentation) and provides plenty of live demos.
+The whole content of [https://nicegui.io](https://nicegui.io) is [implemented with NiceGUI itself](https://github.com/zauberzeug/nicegui/blob/main/main.py)
+and can be started locally with `docker run -p 8080:8080 zauberzeug/nicegui` or by executing `main.py` from this repository.
+
+You may also have a look at our [in-depth examples](https://github.com/zauberzeug/nicegui/tree/main/examples) of what you can do with NiceGUI.
+In our wiki we have a list of great [NiceGUI projects from the community](https://github.com/zauberzeug/nicegui/wiki#community-projects), a section with [Tutorials](https://github.com/zauberzeug/nicegui/wiki#tutorials), a growing list of [FAQs](https://github.com/zauberzeug/nicegui/wiki/FAQs) and [some strategies for using ChatGPT / LLMs to get help about NiceGUI](https://github.com/zauberzeug/nicegui/wiki#chatgpt).
+
+## Why?
+
+We at [Zauberzeug](https://zauberzeug.com) like [Streamlit](https://streamlit.io/)
+but find it does [too much magic](https://github.com/zauberzeug/nicegui/issues/1#issuecomment-847413651) when it comes to state handling.
+In search for an alternative nice library to write simple graphical user interfaces in Python we discovered [JustPy](https://justpy.io/).
+Although we liked the approach, it is too "low-level HTML" for our daily usage.
+But it inspired us to use [Vue](https://vuejs.org/) and [Quasar](https://quasar.dev/) for the frontend.
+
+We have built on top of [FastAPI](https://fastapi.tiangolo.com/),
+which itself is based on the ASGI framework [Starlette](https://www.starlette.io/)
+and the ASGI webserver [Uvicorn](https://www.uvicorn.org/)
+because of their great performance and ease of use.
+
+## Sponsors
+
+Maintenance of this project is made possible by all the [contributors](https://github.com/zauberzeug/nicegui/graphs/contributors) and [sponsors](https://github.com/sponsors/zauberzeug).
+If you would like to support this project and have your avatar or company logo appear below, please [sponsor us](https://github.com/sponsors/zauberzeug). 💖
+
+<!-- SPONSORS -->
+<p align="center">
+  <a href="https://github.com/lechler-gmbh"><img src="https://github.com/lechler-gmbh.png" width="50px" alt="Lechler GmbH" /></a>
+  <a href="https://github.com/Zhifeng2019"><img src="https://github.com/Zhifeng2019.png" width="50px" alt="Zhifeng" /></a>
+  <a href="https://github.com/sereneturtlefox"><img src="https://github.com/sereneturtlefox.png" width="50px" alt="None" /></a>
+  <a href="https://github.com/whoulden"><img src="https://github.com/whoulden.png" width="50px" alt="Wayne Houlden" /></a>
+  <a href="https://github.com/digiquip"><img src="https://github.com/digiquip.png" width="50px" alt="DigiQuip AS" /></a>
+  <a href="https://github.com/aitech95"><img src="https://github.com/aitech95.png" width="50px" alt="JACOB SHI " /></a>
+  <a href="https://github.com/Christian-D-Bock"><img src="https://github.com/Christian-D-Bock.png" width="50px" alt="Christian Bock" /></a>
+  <a href="https://github.com/LambdaTest-Inc"><img src="https://github.com/LambdaTest-Inc.png" width="50px" alt="TestMu AI Open Source Office (Formerly LambdaTest)" /></a>
+</p>
+<!-- SPONSORS -->
+
+Consider this low-barrier form of contribution yourself.
+Your [support](https://github.com/sponsors/zauberzeug) is much appreciated.
+
+## Contributing
+
+Thank you for your interest in contributing to NiceGUI! We are thrilled to have you on board and appreciate your efforts to make this project even better.
+
+As a growing open-source project, we understand that it takes a community effort to achieve our goals. That's why we welcome all kinds of contributions, no matter how small or big they are. Whether it's adding new features, fixing bugs, improving documentation, or suggesting new ideas, we believe that every contribution counts and adds value to our project.
+
+We have provided a detailed guide on how to contribute to NiceGUI in our [CONTRIBUTING.md](https://github.com/zauberzeug/nicegui/blob/main/CONTRIBUTING.md) file. We encourage you to read it carefully before making any contributions to ensure that your work aligns with the project's goals and standards.
+
+If you have any questions or need help with anything, please don't hesitate to reach out to us. We are always here to support and guide you through the contribution process.
+
+## Included Web Dependencies
+
+See [DEPENDENCIES.md](https://github.com/zauberzeug/nicegui/blob/main/DEPENDENCIES.md) for a list of web frameworks NiceGUI depends on.
+
+## Architecture
+
+NiceGUI is a Python framework for building web UIs with a **backend-first philosophy**.
+Key architectural decisions:
+
+- **Backend-first**: All UI logic lives in Python; the framework handles web details
+- **Tech stack**: Python/FastAPI backend, Vue/Quasar frontend, socket.io for communication
+- **Single worker**: Uses one uvicorn worker (thanks to full async support, no multi-process synchronization needed)
+- **Real-time communication**: WebSocket connection is established after initial page load, kept open for client-server communication
+- **User interactions**: All UI events are sent to backend and invoke Python functions, which can then generate UI updates
+- **Outbox**: Accumulates UI updates and sends them in batches to the client
+

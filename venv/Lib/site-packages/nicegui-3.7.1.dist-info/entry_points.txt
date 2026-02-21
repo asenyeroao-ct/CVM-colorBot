@@ -1,0 +1,3 @@
+[console_scripts]
+nicegui-pack=nicegui.scripts.pack:main
+

@@ -1,0 +1,7 @@
+[
+  "tests/test_aim_improvements.py::test_rgb_trigger_release_only_once_while_inactive",
+  "tests/test_aim_improvements.py::test_silent_multiplier_applied",
+  "tests/test_aim_improvements.py::test_target_hysteresis",
+  "tests/test_aim_improvements.py::test_trigger_pixel_threshold",
+  "tests/test_aim_improvements.py::test_trigger_release_only_once_while_inactive"
+]

@@ -1,0 +1,191 @@
+Metadata-Version: 2.4
+Name: cyndilib
+Version: 0.0.8
+Summary: Python wrapper for NDI® written in Cython
+Author-email: Matthew Reid <matt@nomadic-recording.com>
+License-Expression: MIT
+Project-URL: Homepage, https://github.com/nocarryr/cyndilib
+Project-URL: Documentation, https://cyndilib.readthedocs.io
+Project-URL: Download, https://pypi.org/project/cyndilib
+Project-URL: Source, https://github.com/nocarryr/cyndilib
+Project-URL: Tracker, https://github.com/nocarryr/cyndilib/issues
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Natural Language :: English
+Classifier: Operating System :: MacOS
+Classifier: Operating System :: MacOS :: MacOS X
+Classifier: Operating System :: Microsoft
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: Microsoft :: Windows :: Windows 10
+Classifier: Operating System :: POSIX
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Programming Language :: Cython
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: Implementation :: CPython
+Classifier: Topic :: Multimedia
+Classifier: Topic :: Multimedia :: Sound/Audio
+Classifier: Topic :: Multimedia :: Sound/Audio :: Capture/Recording
+Classifier: Topic :: Multimedia :: Sound/Audio :: Conversion
+Classifier: Topic :: Multimedia :: Video
+Classifier: Topic :: Multimedia :: Video :: Capture
+Classifier: Topic :: Multimedia :: Video :: Conversion
+Classifier: Topic :: Software Development
+Classifier: Topic :: Software Development :: Libraries
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.9
+Description-Content-Type: text/x-rst
+License-File: LICENSE
+License-File: libndi_licenses.txt
+Requires-Dist: numpy
+Requires-Dist: importlib_resources; python_version < "3.9"
+Dynamic: license-file
+
+cyndilib
+########
+
+A Python wrapper for `NDI®`_ written in `Cython`_
+
+
+Description
+***********
+
+NDI® allows video and audio to be reliably sent and received over IP with
+minimal latency and very high quality. For more information see https://ndi.video.
+
+This project aims to wrap most functionality of the `NDI® SDK`_ for use in
+Python. Due to the real-time nature of audio and video, nearly all of this
+library is written in `Cython`_ for performance purposes. By design, "cyndilib"
+may be used within other Cython code.
+
+
+Links
+*****
+
+.. list-table::
+
+  * - Project Home
+    - https://github.com/nocarryr/cyndilib
+  * - Documentation
+    - https://cyndilib.readthedocs.io
+  * - PyPI
+    - https://pypi.org/project/cyndilib
+
+
+Installation
+************
+
+
+From PyPI
+=========
+
+This project is available on PyPI with pre-built wheels for most
+platforms. Installing via `pip`_ would be the simplest method of
+installation::
+
+    pip install cyndilib
+
+All of the necessary headers and Cython ``.pxd`` files will be included
+in the distribution. This will allow for direct integration if using
+Cython in your application using the ``cimport`` statement.
+See the `Cython documentation <https://cython.readthedocs.io/en/latest/src/userguide/sharing_declarations.html>`_
+for more details.
+
+
+Building from Source
+====================
+
+This may be necessary if a pre-built wheel is not available for
+your platform or Python version.
+
+First clone or download the repository::
+
+    git clone https://github.com/nocarryr/cyndilib.git
+    cd cyndilib
+
+
+The project can then be installed with::
+
+    pip install .
+
+
+All of the dependencies for building and installation should be automatically
+detected and installed (assuming your system supports the `build metadata`_
+specifications introduced `PEP 517`_).
+
+.. note::
+
+    The ``.`` in the above command implies that you are in the root directory
+    of the cloned project.  For other uses, the path to the project root may
+    be used instead.
+
+
+Parallel Builds
+^^^^^^^^^^^^^^^
+
+There are quite a few sources to compile and by default, they will be compiled
+one at a time.  There is currently not a direct way to tell pip to use multiple
+threads when compiling.
+
+An environment variable ``CYNDILIB_BUILD_PARALLEL`` may be used to work around
+this however.  Its value can be either a specific number of threads to use
+or ``"auto"`` to use all available cores::
+
+    CYNDILIB_BUILD_PARALLEL=auto pip install .
+
+
+Further Information
+^^^^^^^^^^^^^^^^^^^
+
+More information on compilation and development can be found on the
+`development page <https://cyndilib.readthedocs.io/en/latest/development.html>`_
+of the project documentation.
+
+
+Usage
+*****
+
+Documentation can be found at https://cyndilib.readthedocs.io.
+Since this project is still in its early stages of development however,
+a look at the example code and tests in the repository might be more useful.
+
+
+License
+*******
+
+cyndilib is licensed under the MIT license. See included `LICENSE`_ file.
+
+NDI® is a registered trademark of Vizrt NDI AB. Its associated license
+information can be found in `libndi_licenses.txt`_.
+
+
+⚠ Distribution Considerations ⚠
+===============================
+
+Before distributing or including this in your own projects it is **important**
+that you have read and understand the "Licensing" section included in the
+`NDI® SDK Documentation`_.
+
+There are specific requirements listed for branding, trademark use and URLs to
+be displayed, etc. To the best of my knowledge this project is following the
+guidelines and corrections will be made if discovered otherwise.
+
+Liability for derivative works, etc falls under the responsibility of their authors.
+
+
+
+.. _NDI®: https://ndi.video
+.. _NDI® SDK: https://ndi.video/for-developers/ndi-sdk/
+.. _NDI® SDK Documentation: https://docs.ndi.video/docs
+.. _Cython: https://cython.org
+.. _PyPI: https://pypi.org/
+.. _LICENSE: LICENSE
+.. _libndi_licenses.txt: libndi_licenses.txt
+.. _PEP 517: https://peps.python.org/pep-0517/
+.. _build metadata: https://setuptools.pypa.io/en/latest/build_meta.html
+.. _pip: https://pip.pypa.io/
