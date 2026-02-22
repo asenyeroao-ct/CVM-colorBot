@@ -201,6 +201,18 @@ TRIGGER_STRAFE_MODE_DISPLAY = {
     "manual_wait": "Manual Wait",
 }
 
+AIM_MODE_DISPLAY_TO_VALUE = {
+    "Normal": "Normal",
+    "Silent": "Silent",
+    "NCAF": "NCAF",
+    "WindMouse": "WindMouse",
+    "Bezier": "Bezier",
+    "PID Controller ( RISK )": "PID",
+}
+
+AIM_MODE_VALUE_TO_DISPLAY = {value: key for key, value in AIM_MODE_DISPLAY_TO_VALUE.items()}
+AIM_MODE_OPTIONS = list(AIM_MODE_DISPLAY_TO_VALUE.keys())
+
 class ViewerApp(ctk.CTk):
     """主應用程式 UI (Ultra Minimalist)。"""
     
@@ -2522,10 +2534,11 @@ class ViewerApp(ctk.CTk):
         
         # 鈹€鈹€ OPERATION MODE (collapsible) 鈹€鈹€
         sec_mode = self._create_collapsible_section(self.content_frame, "Operation Mode", initially_open=True)
-        self.mode_option = self._add_option_row_in_frame(sec_mode, "Mode", ["Normal", "Silent", "NCAF", "WindMouse", "Bezier"], self._on_mode_selected)
+        self.mode_option = self._add_option_row_in_frame(sec_mode, "Mode", AIM_MODE_OPTIONS, self._on_mode_selected)
         self._option_widgets["mode"] = self.mode_option
-        current_mode = getattr(config, "mode", "Normal")
-        self.mode_option.set(current_mode)
+        current_mode = self._aim_mode_display_to_value(getattr(config, "mode", "Normal"))
+        config.mode = current_mode
+        self.mode_option.set(self._aim_mode_value_to_display(current_mode))
         
         # 鈹€鈹€ MODE PARAMETERS (collapsible) 鈹€鈹€
         sec_params = self._create_collapsible_section(
@@ -2661,6 +2674,27 @@ class ViewerApp(ctk.CTk):
                                       self._on_fovsize_changed)
             self._add_ads_fov_controls_in_frame(sec_params, is_sec=False)
         
+        elif current_mode == "PID":
+            self._add_subtitle_in_frame(sec_params, "PID PARAMETERS")
+            self._add_slider_in_frame(sec_params, "Kp", "pid_kp", 0.0, 20.0,
+                                      float(getattr(config, "pid_kp", 3.7)),
+                                      self._on_pid_kp_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Ki", "pid_ki", 0.0, 100.0,
+                                      float(getattr(config, "pid_ki", 24.0)),
+                                      self._on_pid_ki_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Kd", "pid_kd", 0.0, 10.0,
+                                      float(getattr(config, "pid_kd", 0.11)),
+                                      self._on_pid_kd_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Max Output", "pid_max_output", 1.0, 200.0,
+                                      float(getattr(config, "pid_max_output", 50.0)),
+                                      self._on_pid_max_output_changed, is_float=True)
+            self._add_spacer_in_frame(sec_params)
+            self._add_subtitle_in_frame(sec_params, "FOV")
+            self._add_slider_in_frame(sec_params, "FOV Size", "fovsize", 1, 1000,
+                                      float(getattr(config, "fovsize", 300)),
+                                      self._on_fovsize_changed)
+            self._add_ads_fov_controls_in_frame(sec_params, is_sec=False)
+        
         # 鈹€鈹€ OFFSET (collapsible) 鈹€鈹€
         sec_offset = self._create_collapsible_section(self.content_frame, "Offset", initially_open=False)
         self._add_slider_in_frame(sec_offset, "X-Offset", "aim_offsetX", -100, 100,
@@ -2739,10 +2773,11 @@ class ViewerApp(ctk.CTk):
         
         # 鈹€鈹€ OPERATION MODE (collapsible) 鈹€鈹€
         sec_mode = self._create_collapsible_section(self.content_frame, "Operation Mode", initially_open=True)
-        self.mode_option_sec = self._add_option_row_in_frame(sec_mode, "Mode", ["Normal", "Silent", "NCAF", "WindMouse", "Bezier"], self._on_mode_sec_selected)
+        self.mode_option_sec = self._add_option_row_in_frame(sec_mode, "Mode", AIM_MODE_OPTIONS, self._on_mode_sec_selected)
         self._option_widgets["mode_sec"] = self.mode_option_sec
-        current_mode_sec = getattr(config, "mode_sec", "Normal")
-        self.mode_option_sec.set(current_mode_sec)
+        current_mode_sec = self._aim_mode_display_to_value(getattr(config, "mode_sec", "Normal"))
+        config.mode_sec = current_mode_sec
+        self.mode_option_sec.set(self._aim_mode_value_to_display(current_mode_sec))
         
         # 鈹€鈹€ MODE PARAMETERS (collapsible) 鈹€鈹€
         sec_params = self._create_collapsible_section(
@@ -2865,6 +2900,27 @@ class ViewerApp(ctk.CTk):
             self._add_slider_in_frame(sec_params, "Delay (ms)", "bezier_delay_sec", 0.1, 50.0,
                                       float(getattr(config, "bezier_delay_sec", 0.002)) * 1000,
                                       self._on_bezier_delay_sec_changed, is_float=True)
+            self._add_spacer_in_frame(sec_params)
+            self._add_subtitle_in_frame(sec_params, "FOV")
+            self._add_slider_in_frame(sec_params, "FOV Size", "fovsize_sec", 1, 1000,
+                                      float(getattr(config, "fovsize_sec", 150)),
+                                      self._on_fovsize_sec_changed)
+            self._add_ads_fov_controls_in_frame(sec_params, is_sec=True)
+        
+        elif current_mode_sec == "PID":
+            self._add_subtitle_in_frame(sec_params, "PID PARAMETERS")
+            self._add_slider_in_frame(sec_params, "Kp", "pid_kp_sec", 0.0, 20.0,
+                                      float(getattr(config, "pid_kp_sec", 3.7)),
+                                      self._on_pid_kp_sec_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Ki", "pid_ki_sec", 0.0, 100.0,
+                                      float(getattr(config, "pid_ki_sec", 24.0)),
+                                      self._on_pid_ki_sec_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Kd", "pid_kd_sec", 0.0, 10.0,
+                                      float(getattr(config, "pid_kd_sec", 0.11)),
+                                      self._on_pid_kd_sec_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Max Output", "pid_max_output_sec", 1.0, 200.0,
+                                      float(getattr(config, "pid_max_output_sec", 50.0)),
+                                      self._on_pid_max_output_sec_changed, is_float=True)
             self._add_spacer_in_frame(sec_params)
             self._add_subtitle_in_frame(sec_params, "FOV")
             self._add_slider_in_frame(sec_params, "FOV Size", "fovsize_sec", 1, 1000,
@@ -4504,6 +4560,31 @@ class ViewerApp(ctk.CTk):
             pass
         return str(binding)
 
+    def _aim_mode_display_to_value(self, value):
+        raw = str(value or "").strip()
+        if not raw:
+            return "Normal"
+        mapped = AIM_MODE_DISPLAY_TO_VALUE.get(raw)
+        if mapped:
+            return mapped
+        lowered = raw.lower()
+        if lowered == "pid":
+            return "PID"
+        if lowered in {"pid controller", "pid controller (risk)", "pid controller ( risk )"}:
+            return "PID"
+        canonical = {
+            "normal": "Normal",
+            "silent": "Silent",
+            "ncaf": "NCAF",
+            "windmouse": "WindMouse",
+            "bezier": "Bezier",
+        }
+        return canonical.get(lowered, "Normal")
+
+    def _aim_mode_value_to_display(self, value):
+        canonical = self._aim_mode_display_to_value(value)
+        return AIM_MODE_VALUE_TO_DISPLAY.get(canonical, "Normal")
+
     def _start_aim_key_capture(self, is_sec=False):
         config_key = "selected_mouse_button_sec" if is_sec else "selected_mouse_button"
         tracker_key = "selected_mouse_button_sec" if is_sec else "selected_mouse_button"
@@ -4812,6 +4893,8 @@ class ViewerApp(ctk.CTk):
         try:
             data = self._strip_config_metadata(data)
             for k, v in data.items():
+                if k in ("mode", "mode_sec"):
+                    v = self._aim_mode_display_to_value(v)
                 setattr(config, k, v)
                 if hasattr(self.tracker, k):
                     setattr(self.tracker, k, v)
@@ -4863,6 +4946,8 @@ class ViewerApp(ctk.CTk):
                             "manual_wait": "Manual Wait",
                         }
                         self._set_option_value(k, strafe_mode_display.get(str(v), "Off"))
+                    elif k in ("mode", "mode_sec"):
+                        self._set_option_value(k, self._aim_mode_value_to_display(v))
                     else:
                         self._set_option_value(k, v)
 
@@ -6647,16 +6732,18 @@ class ViewerApp(ctk.CTk):
         log_print(f"[UI] Detection min contour points updated: {int(val)}")
     
     def _on_mode_selected(self, val): 
-        config.mode = val
-        self.tracker.mode = val
+        mode_value = self._aim_mode_display_to_value(val)
+        config.mode = mode_value
+        self.tracker.mode = mode_value
         # 閲嶆柊娓叉煋 Aimbot tab 浠ラ’绀哄皪鎳夋ā寮忕殑鍙冩暩
         self._show_aimbot_tab()
         # 閲嶆柊楂樹寒姝ｇ⒑鐨勫皫鑸寜閳?
         self._set_nav_active("Main Aimbot")
     
     def _on_mode_sec_selected(self, val):
-        config.mode_sec = val
-        self.tracker.mode_sec = val
+        mode_value = self._aim_mode_display_to_value(val)
+        config.mode_sec = mode_value
+        self.tracker.mode_sec = mode_value
         # 閲嶆柊娓叉煋 Sec Aimbot tab 浠ラ’绀哄皪鎳夋ā寮忕殑鍙冩暩
         self._show_sec_aimbot_tab()
         # 閲嶆柊楂樹寒姝ｇ⒑鐨勫皫鑸寜閳?
@@ -6860,6 +6947,32 @@ class ViewerApp(ctk.CTk):
     def _on_bezier_delay_sec_changed(self, val):
         config.bezier_delay_sec = float(val) / 1000.0  # ms 鈫?s
     
+    # --- PID Callbacks (Main) ---
+    def _on_pid_kp_changed(self, val):
+        config.pid_kp = float(val)
+
+    def _on_pid_ki_changed(self, val):
+        config.pid_ki = float(val)
+
+    def _on_pid_kd_changed(self, val):
+        config.pid_kd = float(val)
+
+    def _on_pid_max_output_changed(self, val):
+        config.pid_max_output = float(val)
+
+    # --- PID Callbacks (Sec) ---
+    def _on_pid_kp_sec_changed(self, val):
+        config.pid_kp_sec = float(val)
+
+    def _on_pid_ki_sec_changed(self, val):
+        config.pid_ki_sec = float(val)
+
+    def _on_pid_kd_sec_changed(self, val):
+        config.pid_kd_sec = float(val)
+
+    def _on_pid_max_output_sec_changed(self, val):
+        config.pid_max_output_sec = float(val)
+
     def _on_aimbot_button_selected(self, val):
         for k, name in BUTTONS.items():
             if name == val:

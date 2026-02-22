@@ -82,8 +82,8 @@ class Config:
         self.aimbot_activation_type = "hold_enable"  # Main Aimbot: hold_enable, hold_disable, toggle, use_enable
         self.aimbot_activation_type_sec = "hold_enable"  # Sec Aimbot: hold_enable, hold_disable, toggle, use_enable
         # --- Aimbot Mode ---
-        self.mode = "Normal"        # Main Aimbot 妯″紡: Normal, Silent, NCAF, WindMouse, Bezier
-        self.mode_sec = "Normal"    # Sec Aimbot 妯″紡: Normal, Silent, NCAF, WindMouse, Bezier
+        self.mode = "Normal"        # Main Aimbot 妯″紡: Normal, Silent, NCAF, WindMouse, Bezier, PID
+        self.mode_sec = "Normal"    # Sec Aimbot 妯″紡: Normal, Silent, NCAF, WindMouse, Bezier, PID
 
         self.fovsize = 100
         self.ads_fov_enabled = False
@@ -215,6 +215,18 @@ class Config:
         self.bezier_ctrl_y_sec = 16.0
         self.bezier_speed_sec = 1.0
         self.bezier_delay_sec = 0.002
+
+        # --- PID Parameters (Main) ---
+        self.pid_kp = 3.7
+        self.pid_ki = 24.0
+        self.pid_kd = 0.11
+        self.pid_max_output = 50.0
+
+        # --- PID Parameters (Sec) ---
+        self.pid_kp_sec = 3.7
+        self.pid_ki_sec = 24.0
+        self.pid_kd_sec = 0.11
+        self.pid_max_output_sec = 50.0
         
         # --- Silent Mode Parameters ---
         self.silent_distance = 1.0  # 绉诲嫊鍊嶇巼锛堢敤鏂艰鏁寸Щ鍕曡窛闆㈢殑鍊嶆暩锛?
@@ -499,6 +511,16 @@ class Config:
             "bezier_ctrl_y_sec": self.bezier_ctrl_y_sec,
             "bezier_speed_sec": self.bezier_speed_sec,
             "bezier_delay_sec": self.bezier_delay_sec,
+            # PID Parameters (Main)
+            "pid_kp": self.pid_kp,
+            "pid_ki": self.pid_ki,
+            "pid_kd": self.pid_kd,
+            "pid_max_output": self.pid_max_output,
+            # PID Parameters (Sec)
+            "pid_kp_sec": self.pid_kp_sec,
+            "pid_ki_sec": self.pid_ki_sec,
+            "pid_kd_sec": self.pid_kd_sec,
+            "pid_max_output_sec": self.pid_max_output_sec,
             
             # Silent Mode Parameters
             "silent_distance": self.silent_distance,
@@ -607,6 +629,24 @@ class Config:
             self.ads_fovsize_sec = float(getattr(self, "fovsize_sec", 150))
         self.ads_key = str(getattr(self, "ads_key", "Right Mouse Button")).strip() or "Right Mouse Button"
         self.ads_key_sec = str(getattr(self, "ads_key_sec", "Right Mouse Button")).strip() or "Right Mouse Button"
+        def _normalize_aim_mode(value):
+            raw = str(value or "").strip()
+            if not raw:
+                return "Normal"
+            mapping = {
+                "normal": "Normal",
+                "silent": "Silent",
+                "ncaf": "NCAF",
+                "windmouse": "WindMouse",
+                "bezier": "Bezier",
+                "pid": "PID",
+                "pid controller": "PID",
+                "pid controller (risk)": "PID",
+                "pid controller ( risk )": "PID",
+            }
+            return mapping.get(raw.lower(), "Normal")
+        self.mode = _normalize_aim_mode(getattr(self, "mode", "Normal"))
+        self.mode_sec = _normalize_aim_mode(getattr(self, "mode_sec", "Normal"))
         ads_key_type = str(getattr(self, "ads_key_type", "hold")).strip().lower()
         self.ads_key_type = "toggle" if ads_key_type == "toggle" else "hold"
         ads_key_type_sec = str(getattr(self, "ads_key_type_sec", "hold")).strip().lower()

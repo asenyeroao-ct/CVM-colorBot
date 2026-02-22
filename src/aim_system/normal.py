@@ -1,7 +1,7 @@
-"""
-瞄準算法調度器
-處理所有瞄準模式下的 Aimbot 和 Triggerbot 邏輯
-支持 Normal, Silent, NCAF, WindMouse, Bezier 五種模式
+﻿"""
+鐬勬簴绠楁硶瑾垮害鍣?
+铏曠悊鎵€鏈夌瀯婧栨ā寮忎笅鐨?Aimbot 鍜?Triggerbot 閭忚集
+鏀寔 Normal, Silent, NCAF, WindMouse, Bezier 浜旂ó妯″紡
 """
 import math
 import queue
@@ -13,6 +13,7 @@ from src.utils.debug_logger import log_move, log_print
 from src.utils.activation import check_aimbot_activation, get_active_aim_fov
 from .Triggerbot import process_triggerbot
 from .RCS import process_rcs, check_y_release
+from .mode_dispatcher import dispatch as dispatch_aim_mode
 
 
 def _queue_move(tracker, dx, dy, delay=0.0, drop_oldest=True):
@@ -102,16 +103,16 @@ def _enqueue_path(tracker, path, max_steps=24, clear_existing=False):
 
 def calculate_movement(dx, dy, sens, dpi):
     """
-    計算移動量（基於靈敏度和 DPI）
+    瑷堢畻绉诲嫊閲忥紙鍩烘柤闈堟晱搴﹀拰 DPI锛?
     
     Args:
-        dx: X 方向像素差
-        dy: Y 方向像素差
-        sens: 遊戲內靈敏度
-        dpi: 滑鼠 DPI
+        dx: X 鏂瑰悜鍍忕礌宸?
+        dy: Y 鏂瑰悜鍍忕礌宸?
+        sens: 閬婃埐鍏ч潏鏁忓害
+        dpi: 婊戦紶 DPI
         
     Returns:
-        tuple: (ndx, ndy) 轉換後的移動量
+        tuple: (ndx, ndy) 杞夋彌寰岀殑绉诲嫊閲?
     """
     cm_per_rev_base = 54.54
     cm_per_rev = cm_per_rev_base / max(sens, 0.01)
@@ -150,7 +151,7 @@ def compute_silent_delta(dx, dy, multiplier, max_speed):
 
 
 def _flush_move_queue(tracker):
-    """清空移動隊列，防止堆積"""
+    """Flush pending move queue items when needed."""
     if tracker.move_queue.full():
         try:
             while not tracker.move_queue.empty():
@@ -160,13 +161,150 @@ def _flush_move_queue(tracker):
 
 
 # =====================================================
-# Normal 模式
+# Normal 妯″紡
 # =====================================================
 
+class _PIDController:
+    def __init__(self, kp=3.7, ki=24.0, kd=0.11, dt_cap=0.1):
+        self.kp = float(kp)
+        self.ki = float(ki)
+        self.kd = float(kd)
+        self.dt_cap = float(dt_cap)
+        self.prev_err = 0.0
+        self.integral = 0.0
+        self.last_step = None
+
+    def set_gains(self, kp, ki, kd):
+        self.kp = float(kp)
+        self.ki = float(ki)
+        self.kd = float(kd)
+
+    def reset(self):
+        self.prev_err = 0.0
+        self.integral = 0.0
+        self.last_step = None
+
+    def step(self, err, integral_limit=None):
+        err = float(err)
+        now = time.perf_counter()
+        if self.last_step is None:
+            dt = 0.0
+        else:
+            dt = max(0.0, now - self.last_step)
+            if dt > self.dt_cap:
+                dt = self.dt_cap
+        self.last_step = now
+
+        derivative = 0.0
+        if dt > 1e-6:
+            self.integral += err * dt
+            if integral_limit is not None:
+                limit = abs(float(integral_limit))
+                self.integral = max(-limit, min(limit, self.integral))
+            derivative = (err - self.prev_err) / dt
+
+        output = self.kp * err + self.ki * self.integral + self.kd * derivative
+        self.prev_err = err
+        return output
+
+
+def _get_pid_state(tracker, is_sec, kp, ki, kd, max_output):
+    state_key = "_pid_state_sec" if is_sec else "_pid_state_main"
+    state = getattr(tracker, state_key, None)
+    if not isinstance(state, dict) or "x" not in state or "y" not in state:
+        state = {
+            "x": _PIDController(kp, ki, kd),
+            "y": _PIDController(kp, ki, kd),
+            "gains": (float(kp), float(ki), float(kd)),
+            "max_output": abs(float(max_output)),
+        }
+        setattr(tracker, state_key, state)
+        return state
+
+    gains = (float(kp), float(ki), float(kd))
+    if state.get("gains") != gains:
+        state["x"].set_gains(*gains)
+        state["y"].set_gains(*gains)
+        state["x"].reset()
+        state["y"].reset()
+        state["gains"] = gains
+
+    state["max_output"] = abs(float(max_output))
+    return state
+
+
+def _reset_pid_state(tracker, is_sec):
+    state_key = "_pid_state_sec" if is_sec else "_pid_state_main"
+    state = getattr(tracker, state_key, None)
+    if not isinstance(state, dict):
+        return
+    ctrl_x = state.get("x")
+    ctrl_y = state.get("y")
+    if ctrl_x is not None:
+        ctrl_x.reset()
+    if ctrl_y is not None:
+        ctrl_y.reset()
+
+
+def _apply_pid_aim(dx, dy, distance_to_center, tracker, is_sec=False):
+    if is_sec:
+        kp = float(getattr(config, "pid_kp_sec", 3.7))
+        ki = float(getattr(config, "pid_ki_sec", 24.0))
+        kd = float(getattr(config, "pid_kd_sec", 0.11))
+        max_output = float(getattr(config, "pid_max_output_sec", 50.0))
+        fov = float(get_active_aim_fov(is_sec=True, fallback=tracker.fovsize_sec))
+        label = "Sec Aimbot (PID)"
+    else:
+        kp = float(getattr(config, "pid_kp", 3.7))
+        ki = float(getattr(config, "pid_ki", 24.0))
+        kd = float(getattr(config, "pid_kd", 0.11))
+        max_output = float(getattr(config, "pid_max_output", 50.0))
+        fov = float(get_active_aim_fov(is_sec=False, fallback=tracker.fovsize))
+        label = "Main Aimbot (PID)"
+
+    max_output = max(0.1, abs(max_output))
+    pid_state = _get_pid_state(tracker, is_sec, kp, ki, kd, max_output)
+
+    integral_limit = None
+    if abs(ki) > 1e-6:
+        integral_limit = max_output / abs(ki)
+
+    out_x = pid_state["x"].step(dx, integral_limit=integral_limit)
+    out_y = pid_state["y"].step(dy, integral_limit=integral_limit)
+    out_x = max(-max_output, min(max_output, out_x))
+    out_y = max(-max_output, min(max_output, out_y))
+
+    ddx, ddy = tracker._clip_movement(out_x, out_y)
+    qdx, qdy = _quantize_with_residual(tracker, ddx, ddy, is_sec=is_sec)
+    if qdx == 0 and qdy == 0 and (abs(dx) + abs(dy)) >= 3.0:
+        if abs(dx) >= abs(dy):
+            qdx = 1 if dx > 0 else -1
+        else:
+            qdy = 1 if dy > 0 else -1
+
+    try:
+        from src.utils.mouse import update_movement_lock
+        if not is_sec:
+            lock_x = getattr(config, "mouse_lock_main_x", False)
+            lock_y = getattr(config, "mouse_lock_main_y", False)
+        else:
+            lock_x = getattr(config, "mouse_lock_sec_x", False)
+            lock_y = getattr(config, "mouse_lock_sec_y", False)
+        if lock_x or lock_y:
+            update_movement_lock(lock_x, lock_y, is_main=not is_sec)
+    except Exception:
+        pass
+
+    distance_factor = min(distance_to_center / max(fov, 1.0), 1.0)
+    dynamic_delay = 0.003 * (1.0 - distance_factor * 0.3)
+
+    if qdx != 0 or qdy != 0:
+        _queue_move(tracker, qdx, qdy, dynamic_delay, drop_oldest=True)
+        log_move(qdx, qdy, label)
+
+
 def _apply_normal_aim(dx, dy, distance_to_center, tracker, is_sec=False):
-    """
-    Normal 模式瞄準：每幀計算 delta → 應用速度/平滑 → 移動
-    """
+    # Normal mode aim pipeline
     if is_sec:
         x_speed = float(getattr(config, "normal_x_speed_sec", tracker.normal_x_speed_sec))
         y_speed = float(getattr(config, "normal_y_speed_sec", tracker.normal_y_speed_sec))
@@ -202,7 +340,7 @@ def _apply_normal_aim(dx, dy, distance_to_center, tracker, is_sec=False):
         else:
             qdy = 1 if dy > 0 else -1
     
-    # 更新移動鎖定狀態（如果啟用）
+    # 鏇存柊绉诲嫊閹栧畾鐙€鎱嬶紙濡傛灉鍟熺敤锛?
     try:
         from src.utils.mouse import update_movement_lock
         if not is_sec:
@@ -218,7 +356,7 @@ def _apply_normal_aim(dx, dy, distance_to_center, tracker, is_sec=False):
     except Exception:
         pass
     
-    # 根據距離動態調整延遲
+    # 鏍规摎璺濋洟鍕曟厠瑾挎暣寤堕伈
     distance_factor = min(distance_to_center / max(fov, 1.0), 1.0)
     dynamic_delay = 0.005 * (1.0 - distance_factor * 0.4)
     
@@ -228,16 +366,16 @@ def _apply_normal_aim(dx, dy, distance_to_center, tracker, is_sec=False):
 
 
 # =====================================================
-# Silent 模式
+# Silent 妯″紡
 # =====================================================
 
 def _apply_silent_aim(dx, dy, tracker, is_sec=False):
     """
-    Silent 模式瞄準：移動 → 點擊 → 恢復原位
+    Silent 妯″紡鐬勬簴锛氱Щ鍕?鈫?榛炴搳 鈫?鎭㈠京鍘熶綅
     """
     from .silent import threaded_silent_move
     
-    # 更新移動鎖定狀態（如果啟用）
+    # 鏇存柊绉诲嫊閹栧畾鐙€鎱嬶紙濡傛灉鍟熺敤锛?
     try:
         from src.utils.mouse import update_movement_lock
         if not is_sec:
@@ -253,7 +391,7 @@ def _apply_silent_aim(dx, dy, tracker, is_sec=False):
     except Exception:
         pass
     
-    # 轉換為整數（不再應用速度倍數，因為 Silent 模式使用固定移動）
+    # 杞夋彌鐐烘暣鏁革紙涓嶅啀鎳夌敤閫熷害鍊嶆暩锛屽洜鐐?Silent 妯″紡浣跨敤鍥哄畾绉诲嫊锛?
     distance_multiplier = float(getattr(tracker, "silent_distance", 1.0))
     dx_raw, dy_raw = compute_silent_delta(
         dx,
@@ -271,7 +409,7 @@ def _apply_silent_aim(dx, dy, tracker, is_sec=False):
     if getattr(tracker, "_silent_move_active", False):
         return
     
-    # 使用 Silent 模式的延遲參數（毫秒）
+    # 浣跨敤 Silent 妯″紡鐨勫欢閬插弮鏁革紙姣锛?
     move_delay = getattr(tracker, "silent_move_delay", 500.0)
     return_delay = getattr(tracker, "silent_return_delay", 500.0)
 
@@ -288,17 +426,17 @@ def _apply_silent_aim(dx, dy, tracker, is_sec=False):
 
 
 # =====================================================
-# NCAF 模式
+# NCAF 妯″紡
 # =====================================================
 
 def _apply_ncaf_aim(dx, dy, distance_to_center, tracker, is_sec=False):
     """
-    NCAF 模式瞄準：非線性近距曲線 + 穩定追蹤
+    NCAF 妯″紡鐬勬簴锛氶潪绶氭€ц繎璺濇洸绶?+ 绌╁畾杩借工
 
-    使用像素距離 (distance_to_center) 計算 NCAF 3-zone 速度因子：
-      Zone 1 – 在 Snap Radius 外：全速 (factor=1.0)
-      Zone 2 – Snap Radius 與 Near Radius 之間：線性過渡至 snap_boost
-      Zone 3 – 在 Near Radius 內：snap_boost × (d/near_radius)^α（精確減速）
+    浣跨敤鍍忕礌璺濋洟 (distance_to_center) 瑷堢畻 NCAF 3-zone 閫熷害鍥犲瓙锛?
+      Zone 1 鈥?鍦?Snap Radius 澶栵細鍏ㄩ€?(factor=1.0)
+      Zone 2 鈥?Snap Radius 鑸?Near Radius 涔嬮枔锛氱窔鎬ч亷娓¤嚦 snap_boost
+      Zone 3 鈥?鍦?Near Radius 鍏э細snap_boost 脳 (d/near_radius)^伪锛堢簿纰烘笡閫燂級
     """
     from .NCAF import NCAFController
     import time
@@ -333,8 +471,8 @@ def _apply_ncaf_aim(dx, dy, distance_to_center, tracker, is_sec=False):
     sens = float(getattr(config, "in_game_sens", tracker.in_game_sens))
     dpi = float(getattr(config, "mouse_dpi", tracker.mouse_dpi))
 
-    # 1. 目標預測（簡單線性預測）
-    # 初始化預測歷史（如果不存在）
+    # 1. 鐩闋愭脯锛堢啊鍠窔鎬ч爯娓級
+    # 鍒濆鍖栭爯娓鍙诧紙濡傛灉涓嶅瓨鍦級
     pred_key = f"_ncaf_prediction_{'sec' if is_sec else 'main'}"
     if not hasattr(tracker, pred_key):
         setattr(tracker, pred_key, {
@@ -347,28 +485,28 @@ def _apply_ncaf_aim(dx, dy, distance_to_center, tracker, is_sec=False):
     pred_data = getattr(tracker, pred_key)
     current_time = time.time()
     
-    # 計算預測偏移（如果啟用預測且時間間隔足夠）
+    # 瑷堢畻闋愭脯鍋忕Щ锛堝鏋滃暉鐢ㄩ爯娓笖鏅傞枔闁撻殧瓒冲锛?
     pred_dx, pred_dy = 0.0, 0.0
     if prediction_interval > 0 and pred_data['last_dx'] is not None and pred_data['last_time'] is not None:
         dt = current_time - pred_data['last_time']
         if dt > 0:
-            # 使用上次計算的速度進行預測
+            # 浣跨敤涓婃瑷堢畻鐨勯€熷害閫茶闋愭脯
             vx = pred_data['velocity'][0]
             vy = pred_data['velocity'][1]
-            # 預測未來位置（使用 prediction_interval 作為預測時間）
+            # 闋愭脯鏈締浣嶇疆锛堜娇鐢?prediction_interval 浣滅偤闋愭脯鏅傞枔锛?
             pred_dx = vx * prediction_interval
             pred_dy = vy * prediction_interval
     
-    # 更新預測歷史（計算速度）
+    # 鏇存柊闋愭脯姝峰彶锛堣▓绠楅€熷害锛?
     if pred_data['last_dx'] is not None and pred_data['last_time'] is not None:
         dt = current_time - pred_data['last_time']
         if dt > 0:
-            # 計算速度（像素/秒）
+            # 瑷堢畻閫熷害锛堝儚绱?绉掞級
             vx = (dx - pred_data['last_dx']) / dt
             vy = (dy - pred_data['last_dy']) / dt
-            # 平滑速度（使用指數移動平均）
+            # 骞虫粦閫熷害锛堜娇鐢ㄦ寚鏁哥Щ鍕曞钩鍧囷級
             old_vx, old_vy = pred_data['velocity']
-            alpha = 0.3  # 平滑係數
+            alpha = 0.3  # 骞虫粦淇傛暩
             pred_data['velocity'] = (
                 alpha * vx + (1 - alpha) * old_vx,
                 alpha * vy + (1 - alpha) * old_vy
@@ -378,17 +516,17 @@ def _apply_ncaf_aim(dx, dy, distance_to_center, tracker, is_sec=False):
     pred_data['last_dy'] = dy
     pred_data['last_time'] = current_time
     
-    # 應用預測偏移
+    # 鎳夌敤闋愭脯鍋忕Щ
     dx_with_pred = dx + pred_dx
     dy_with_pred = dy + pred_dy
     distance_with_pred = math.hypot(dx_with_pred, dy_with_pred)
 
-    # 2. 轉換為滑鼠移動量，並乘以速度係數
+    # 2. 杞夋彌鐐烘粦榧犵Щ鍕曢噺锛屼甫涔樹互閫熷害淇傛暩
     ndx, ndy = calculate_movement(dx_with_pred, dy_with_pred, sens, dpi)
     ndx *= x_speed
     ndy *= y_speed
 
-    # 3. 用像素距離查詢 NCAF 3-zone 速度因子
+    # 3. 鐢ㄥ儚绱犺窛闆㈡煡瑭?NCAF 3-zone 閫熷害鍥犲瓙
     pixel_dist = distance_with_pred
     if pixel_dist <= 1e-6:
         return
@@ -397,13 +535,13 @@ def _apply_ncaf_aim(dx, dy, distance_to_center, tracker, is_sec=False):
         pixel_dist, snap_radius, near_radius, alpha, snap_boost
     )
     
-    # 4. 應用 min/max speed multiplier 限制
+    # 4. 鎳夌敤 min/max speed multiplier 闄愬埗
     factor = max(min_speed_multiplier, min(factor, max_speed_multiplier))
 
     ndx *= factor
     ndy *= factor
 
-    # 5. 限制每步最大移動量
+    # 5. 闄愬埗姣忔鏈€澶хЩ鍕曢噺
     step = math.hypot(ndx, ndy)
     if max_step > 0 and step > max_step:
         scale = max_step / step
@@ -412,7 +550,7 @@ def _apply_ncaf_aim(dx, dy, distance_to_center, tracker, is_sec=False):
 
     ddx, ddy = tracker._clip_movement(ndx, ndy)
     
-    # 更新移動鎖定狀態（如果啟用）
+    # 鏇存柊绉诲嫊閹栧畾鐙€鎱嬶紙濡傛灉鍟熺敤锛?
     try:
         from src.utils.mouse import update_movement_lock
         if not is_sec:
@@ -444,11 +582,11 @@ def _apply_ncaf_aim(dx, dy, distance_to_center, tracker, is_sec=False):
 
 
 # =====================================================
-# WindMouse 模式
+# WindMouse 妯″紡
 # =====================================================
 
 class _WindMouseConfig:
-    """WindMouse 所需的配置包裝器"""
+    """WindMouse 鎵€闇€鐨勯厤缃寘瑁濆櫒"""
     def __init__(self, is_sec=False):
         if is_sec:
             self.smooth_gravity = float(getattr(config, "wm_gravity_sec", 9.0))
@@ -467,7 +605,7 @@ class _WindMouseConfig:
             self.smooth_max_delay = float(getattr(config, "wm_max_delay", 0.003))
             self.smooth_distance_threshold = float(getattr(config, "wm_distance_threshold", 50.0))
         
-        # 固定的內部參數
+        # 鍥哄畾鐨勫収閮ㄥ弮鏁?
         self.smooth_reaction_min = 0.02
         self.smooth_reaction_max = 0.08
         self.smooth_close_range = 30.0
@@ -484,10 +622,10 @@ class _WindMouseConfig:
 
 def _apply_windmouse_aim(dx, dy, tracker, is_sec=False):
     """
-    WindMouse 模式瞄準：生成類人化滑鼠路徑並執行
+    WindMouse 妯″紡鐬勬簴锛氱敓鎴愰浜哄寲婊戦紶璺緫涓﹀煼琛?
     
-    必須先乘以 x_speed/y_speed，否則 calculate_movement 產出的度數值太小
-    (通常 < 1)，WindMouse 的 distance < 2 判斷會直接丟棄。
+    蹇呴爤鍏堜箻浠?x_speed/y_speed锛屽惁鍓?calculate_movement 鐢㈠嚭鐨勫害鏁稿€煎お灏?
+    (閫氬父 < 1)锛學indMouse 鐨?distance < 2 鍒ゆ柗鏈冪洿鎺ヤ笩妫勩€?
     """
     from .windmouse_smooth import smooth_aimer
     
@@ -504,7 +642,7 @@ def _apply_windmouse_aim(dx, dy, tracker, is_sec=False):
     sens = float(getattr(config, "in_game_sens", tracker.in_game_sens))
     dpi = float(getattr(config, "mouse_dpi", tracker.mouse_dpi))
     
-    # 轉換為滑鼠移動量，並乘以速度係數（與 Normal 模式一致）
+    # 杞夋彌鐐烘粦榧犵Щ鍕曢噺锛屼甫涔樹互閫熷害淇傛暩锛堣垏 Normal 妯″紡涓€鑷达級
     ndx, ndy = calculate_movement(dx, dy, sens, dpi)
     ndx *= x_speed
     ndy *= y_speed
@@ -512,7 +650,7 @@ def _apply_windmouse_aim(dx, dy, tracker, is_sec=False):
     path = smooth_aimer.calculate_smooth_path(ndx, ndy, wm_config)
     
     if path:
-        # 更新移動鎖定狀態（如果啟用）
+        # 鏇存柊绉诲嫊閹栧畾鐙€鎱嬶紙濡傛灉鍟熺敤锛?
         try:
             from src.utils.mouse import update_movement_lock
             if not is_sec:
@@ -533,12 +671,12 @@ def _apply_windmouse_aim(dx, dy, tracker, is_sec=False):
 
 
 # =====================================================
-# Bezier 模式
+# Bezier 妯″紡
 # =====================================================
 
 def _apply_bezier_aim(dx, dy, distance_to_center, tracker, is_sec=False):
     """
-    Bezier 模式瞄準：使用貝茲曲線生成平滑移動路徑
+    Bezier 妯″紡鐬勬簴锛氫娇鐢ㄨ矟鑼叉洸绶氱敓鎴愬钩婊戠Щ鍕曡矾寰?
     """
     from .Bezier import BezierMovement
 
@@ -570,7 +708,7 @@ def _apply_bezier_aim(dx, dy, distance_to_center, tracker, is_sec=False):
     deltas = bezier.get_movement_deltas(ndx, ndy)
 
     if deltas:
-        # 更新移動鎖定狀態（如果啟用）
+        # 鏇存柊绉诲嫊閹栧畾鐙€鎱嬶紙濡傛灉鍟熺敤锛?
         try:
             from src.utils.mouse import update_movement_lock
             if not is_sec:
@@ -586,7 +724,7 @@ def _apply_bezier_aim(dx, dy, distance_to_center, tracker, is_sec=False):
         except Exception:
             pass
         
-        # 根據距離動態調整延遲
+        # 鏍规摎璺濋洟鍕曟厠瑾挎暣寤堕伈
         distance_factor = min(distance_to_center / max(fov, 1.0), 1.0)
         step_delay = delay * (1.0 - distance_factor * 0.3)
 
@@ -602,24 +740,12 @@ def _apply_bezier_aim(dx, dy, distance_to_center, tracker, is_sec=False):
 
 
 # =====================================================
-# 主調度器
+# 涓昏搴﹀櫒
 # =====================================================
 
 def _dispatch_aimbot(dx, dy, distance_to_center, mode, tracker, is_sec=False):
-    """根據模式調度瞄準邏輯"""
-    if mode == "Normal":
-        _apply_normal_aim(dx, dy, distance_to_center, tracker, is_sec)
-    elif mode == "Silent":
-        _apply_silent_aim(dx, dy, tracker, is_sec)
-    elif mode == "NCAF":
-        _apply_ncaf_aim(dx, dy, distance_to_center, tracker, is_sec)
-    elif mode == "WindMouse":
-        _apply_windmouse_aim(dx, dy, tracker, is_sec)
-    elif mode == "Bezier":
-        _apply_bezier_aim(dx, dy, distance_to_center, tracker, is_sec)
-    else:
-        # 預設使用 Normal
-        _apply_normal_aim(dx, dy, distance_to_center, tracker, is_sec)
+    """鏍规摎妯″紡瑾垮害鐬勬簴閭忚集"""
+    dispatch_aim_mode(dx, dy, distance_to_center, mode, tracker, is_sec=is_sec)
 
 def _unpack_target(target):
     """Unpack target tuple while keeping backward compatibility."""
@@ -641,29 +767,29 @@ def process_normal_mode(
     trigger_img=None,
 ):
     """
-    主瞄準調度器（Main Aimbot + Sec Aimbot + Triggerbot）
-    Main Aimbot 和 Sec Aimbot 各自使用獨立的 Operation Mode
-    優先級：Main Aimbot > Sec Aimbot
+    涓荤瀯婧栬搴﹀櫒锛圡ain Aimbot + Sec Aimbot + Triggerbot锛?
+    Main Aimbot 鍜?Sec Aimbot 鍚勮嚜浣跨敤鐛ㄧ珛鐨?Operation Mode
+    鍎厛绱氾細Main Aimbot > Sec Aimbot
     
     Args:
-        targets_main: 主自瞄目標列表 [(cx, cy, distance, head_y_min, body_y_max), ...]
-        frame: 視頻幀物件
-        img: BGR 圖像
-        tracker: AimTracker 實例
-        targets_sec: 副自瞄目標列表（None 時回退為 targets_main）
-        targets_trigger: Triggerbot 目標列表（None 時回退為 targets_main）
+        targets_main: 涓昏嚜鐬勭洰妯欏垪琛?[(cx, cy, distance, head_y_min, body_y_max), ...]
+        frame: 瑕栭牷骞€鐗╀欢
+        img: BGR 鍦栧儚
+        tracker: AimTracker 瀵︿緥
+        targets_sec: 鍓嚜鐬勭洰妯欏垪琛紙None 鏅傚洖閫€鐐?targets_main锛?
+        targets_trigger: Triggerbot 鐩鍒楄〃锛圢one 鏅傚洖閫€鐐?targets_main锛?
     """
     if targets_sec is None:
         targets_sec = targets_main
     if targets_trigger is None:
         targets_trigger = targets_main
 
-    # Main Aimbot 配置
+    # Main Aimbot 閰嶇疆
     aim_enabled = getattr(config, "enableaim", False)
     selected_btn = getattr(config, "selected_mouse_button", None)
     activation_type = getattr(config, "aimbot_activation_type", "hold_enable")
     
-    # Sec Aimbot 配置
+    # Sec Aimbot 閰嶇疆
     aim_enabled_sec = getattr(config, "enableaim_sec", False)
     selected_btn_sec = getattr(config, "selected_mouse_button_sec", None)
     activation_type_sec = getattr(config, "aimbot_activation_type_sec", "hold_enable")
@@ -673,11 +799,11 @@ def process_normal_mode(
     
     main_aimbot_active = False
     
-    # 取得各自的 Operation Mode
+    # 鍙栧緱鍚勮嚜鐨?Operation Mode
     mode_main = getattr(config, "mode", "Normal")
     mode_sec = getattr(config, "mode_sec", "Normal")
     
-    # 處理 RCS（每幀調用，檢查是否應該啟動）
+    # 铏曠悊 RCS锛堟瘡骞€瑾跨敤锛屾鏌ユ槸鍚︽噳瑭插暉鍕曪級
     rcs_active = process_rcs(
         tracker.controller,
         tracker.rcs_pull_speed,
@@ -685,7 +811,7 @@ def process_normal_mode(
         tracker.rcs_rapid_click_threshold
     )
     
-    # 處理 Aimbot（優先級：Main > Sec）
+    # 铏曠悊 Aimbot锛堝劒鍏堢礆锛歁ain > Sec锛?
     best_target_main = min(targets_main, key=lambda t: t[2]) if targets_main else None
     best_target_sec = min(targets_sec, key=lambda t: t[2]) if targets_sec else None
 
@@ -694,7 +820,7 @@ def process_normal_mode(
         if cx is not None and cy is not None:
             distance_to_center = math.hypot(cx - center_x, cy - center_y)
 
-            # === 優先處理 Main Aimbot ===
+            # === 鍎厛铏曠悊 Main Aimbot ===
             main_fov = float(get_active_aim_fov(is_sec=False, fallback=tracker.fovsize))
             if distance_to_center <= main_fov:
                 if aim_enabled and selected_btn is not None and check_aimbot_activation(selected_btn, activation_type, is_sec=False):
@@ -706,28 +832,28 @@ def process_normal_mode(
                         dx = (cx + aim_offsetX) - center_x
                         dy = (cy + aim_offsetY) - center_y
                         
-                        # Nearest 模式
+                        # Nearest 妯″紡
                         if aim_type == "nearest" and head_y_min is not None and body_y_max is not None:
                             if head_y_min < body_y_max:
                                 target_y = cy + aim_offsetY
                                 if head_y_min <= target_y <= body_y_max:
                                     dy = 0
                         
-                        # RCS 整合
+                        # RCS 鏁村悎
                         if rcs_active:
                             dy = 0
                         
-                        # Y 軸解鎖功能（左鍵按下時解鎖 Y 軸控制）
+                        # Y 杌歌В閹栧姛鑳斤紙宸﹂嵉鎸変笅鏅傝В閹?Y 杌告帶鍒讹級
                         if check_y_release():
                             dy = 0
                         
-                        # 根據 Main 模式調度
+                        # 鏍规摎 Main 妯″紡瑾垮害
                         _dispatch_aimbot(dx, dy, distance_to_center, mode_main, tracker, is_sec=False)
                         main_aimbot_active = True
                     except Exception as e:
                         log_print(f"[Main Aimbot error] {e}")
     
-    # === 如果 Main Aimbot 未啟動，嘗試 Sec Aimbot ===
+    # === 濡傛灉 Main Aimbot 鏈暉鍕曪紝鍢楄│ Sec Aimbot ===
     if not main_aimbot_active and best_target_sec:
         cx, cy, _, head_y_min, body_y_max = _unpack_target(best_target_sec)
         if cx is not None and cy is not None:
@@ -743,27 +869,27 @@ def process_normal_mode(
                         dx = (cx + aim_offsetX_sec) - center_x
                         dy = (cy + aim_offsetY_sec) - center_y
                         
-                        # Nearest 模式
+                        # Nearest 妯″紡
                         if aim_type_sec == "nearest" and head_y_min is not None and body_y_max is not None:
                             if head_y_min < body_y_max:
                                 target_y = cy + aim_offsetY_sec
                                 if head_y_min <= target_y <= body_y_max:
                                     dy = 0
                         
-                        # RCS 整合
+                        # RCS 鏁村悎
                         if rcs_active:
                             dy = 0
                         
-                        # Y 軸解鎖功能（左鍵按下時解鎖 Y 軸控制）
+                        # Y 杌歌В閹栧姛鑳斤紙宸﹂嵉鎸変笅鏅傝В閹?Y 杌告帶鍒讹級
                         if check_y_release():
                             dy = 0
                         
-                        # 根據 Sec 模式調度
+                        # 鏍规摎 Sec 妯″紡瑾垮害
                         _dispatch_aimbot(dx, dy, distance_to_center_sec, mode_sec, tracker, is_sec=True)
                     except Exception as e:
                         log_print(f"[Sec Aimbot error] {e}")
     
-    # 處理 Triggerbot（無論是否有目標都會執行）
+    # 铏曠悊 Triggerbot锛堢劇璜栨槸鍚︽湁鐩閮芥渻鍩疯锛?
     try:
         status = process_triggerbot(
             frame, img, tracker.model, tracker.controller,
@@ -777,3 +903,4 @@ def process_normal_mode(
         )
     except Exception as e:
         log_print("[Triggerbot error]", e)
+
