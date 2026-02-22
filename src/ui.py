@@ -36,6 +36,7 @@ THEME_PRESETS = {
         "COLOR_BORDER": "#0B7A2B",
         "COLOR_DANGER": "#FF4D6D",
         "COLOR_SUCCESS": "#00FF7F",
+        "COLOR_WARNING": "#FFD166",
         "COLOR_NAV_ACTIVE_BG": "#0A2315",
         "COLOR_NAV_HOVER_BG": "#0A1A30",
         "COLOR_MENU_GHOST": "#3A506E",
@@ -54,6 +55,7 @@ THEME_PRESETS = {
         "COLOR_BORDER": "#2C2C2C",
         "COLOR_DANGER": "#CF6679",
         "COLOR_SUCCESS": "#4CAF50",
+        "COLOR_WARNING": "#FFB74D",
         "COLOR_NAV_ACTIVE_BG": "#2A2A2A",
         "COLOR_NAV_HOVER_BG": "#262626",
         "COLOR_MENU_GHOST": "#8A8A8A",
@@ -4159,7 +4161,7 @@ class ViewerApp(ctk.CTk):
             button_hover_color=COLOR_ACCENT,
             text_color=COLOR_TEXT,
             font=FONT_MAIN,
-            dropdown_fg_color="#081425",
+            dropdown_fg_color=COLOR_SURFACE,
             dropdown_hover_color=COLOR_NAV_HOVER_BG,
             dropdown_text_color=COLOR_TEXT,
             corner_radius=8,
@@ -5750,7 +5752,21 @@ class ViewerApp(ctk.CTk):
             
             success, error = self.capture.connect_capture_card(config)
             if success:
-                self._set_status_indicator("Status: CaptureCard connected", COLOR_TEXT)
+                mode_name = "CaptureCardGStreamer" if self.capture.mode == "CaptureCardGStreamer" else "CaptureCard"
+                if (
+                    mode_name == "CaptureCardGStreamer"
+                    and self.capture.capture_card_gstreamer_camera
+                    and hasattr(self.capture.capture_card_gstreamer_camera, "has_frame")
+                    and not self.capture.capture_card_gstreamer_camera.has_frame()
+                ):
+                    self._set_status_indicator(
+                        "Status: CaptureCardGStreamer connected (waiting first frame)",
+                        COLOR_WARNING,
+                    )
+                    log_print("[UI] CaptureCardGStreamer connected, waiting for first frame.")
+                else:
+                    self._set_status_indicator(f"Status: {mode_name} connected", COLOR_TEXT)
+                    log_print(f"[UI] {mode_name} connection successful.")
             else:
                 self._set_status_indicator(f"Status: CaptureCard connect failed: {error}", COLOR_DANGER)
                 log_print(f"[UI] CaptureCard connection failed: {error}")
@@ -7266,12 +7282,25 @@ class UpdateDialog(ctk.CTkToplevel):
         
         return result.strip()
 
-    def _pick_url(self):
-        for key in ("download_url", "release_url", "url"):
+    def _pick_repo_base_url(self):
+        for key in ("repo_url", "repository_url"):
+            value = self.update_info.get(key)
+            if isinstance(value, str) and value.startswith(("http://", "https://")):
+                return value.rstrip("/")
+        return "https://github.com/asenyeroao-ct/CVM-colorBot"
+
+    def _pick_release_url(self):
+        for key in ("release_url", "url"):
             value = self.update_info.get(key)
             if isinstance(value, str) and value.startswith(("http://", "https://")):
                 return value
-        return None
+        return f"{self._pick_repo_base_url()}/commits/main"
+
+    def _pick_download_url(self):
+        value = self.update_info.get("download_url")
+        if isinstance(value, str) and value.startswith(("http://", "https://")):
+            return value
+        return f"{self._pick_repo_base_url()}/archive/refs/heads/main.zip"
 
     def _build_ui(self):
         frame = ctk.CTkFrame(self, fg_color=COLOR_BG, corner_radius=0)
@@ -7339,24 +7368,26 @@ class UpdateDialog(ctk.CTkToplevel):
             width=110,
         ).pack(side="left", padx=(10, 0))
 
-        url = self._pick_url()
-        if url:
+        download_url = self._pick_download_url()
+        release_url = self._pick_release_url()
+
+        if download_url:
             # Primary action button - Download Update
             ctk.CTkButton(
                 btn_row,
-                text="Download Update",
-                command=lambda: self._open_url(url),
+                text="Update Now",
+                command=lambda: self._open_url(download_url),
                 fg_color=COLOR_ACCENT,
                 hover_color=COLOR_ACCENT_HOVER,
                 text_color=COLOR_BG,
                 width=140,
             ).pack(side="right")
-            
-            # Secondary action button - Open Release Page
+
+        if release_url and release_url != download_url:
             ctk.CTkButton(
                 btn_row,
                 text="Open Release",
-                command=lambda: self._open_url(url),
+                command=lambda: self._open_url(release_url),
                 fg_color="transparent",
                 border_width=1,
                 border_color=COLOR_BORDER,
@@ -7621,6 +7652,3 @@ class SettingsWindow(ctk.CTkToplevel):
     def _on_cancel(self):
         """鍙栨秷涓﹂棞闁?- 涓嶄繚瀛樹换浣曟洿鏀癸紝鎭㈠京鍘熷瑷疆"""
         self.destroy()
-
-
-
