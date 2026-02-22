@@ -208,26 +208,26 @@ class _PIDController:
         return output
 
 
-def _get_pid_state(tracker, is_sec, kp, ki, kd, max_output):
+def _get_pid_state(tracker, is_sec, ki, kd, max_output):
     state_key = "_pid_state_sec" if is_sec else "_pid_state_main"
     state = getattr(tracker, state_key, None)
     if not isinstance(state, dict) or "x" not in state or "y" not in state:
         state = {
-            "x": _PIDController(kp, ki, kd),
-            "y": _PIDController(kp, ki, kd),
-            "gains": (float(kp), float(ki), float(kd)),
+            "x": _PIDController(0.0, ki, kd),
+            "y": _PIDController(0.0, ki, kd),
+            "ki_kd": (float(ki), float(kd)),
             "max_output": abs(float(max_output)),
         }
         setattr(tracker, state_key, state)
         return state
 
-    gains = (float(kp), float(ki), float(kd))
-    if state.get("gains") != gains:
-        state["x"].set_gains(*gains)
-        state["y"].set_gains(*gains)
+    ki_kd = (float(ki), float(kd))
+    if state.get("ki_kd") != ki_kd:
+        state["x"].set_gains(0.0, *ki_kd)
+        state["y"].set_gains(0.0, *ki_kd)
         state["x"].reset()
         state["y"].reset()
-        state["gains"] = gains
+        state["ki_kd"] = ki_kd
 
     state["max_output"] = abs(float(max_output))
     return state
@@ -248,22 +248,38 @@ def _reset_pid_state(tracker, is_sec):
 
 def _apply_pid_aim(dx, dy, distance_to_center, tracker, is_sec=False):
     if is_sec:
-        kp = float(getattr(config, "pid_kp_sec", 3.7))
+        kp_default = float(getattr(config, "pid_kp_sec", 3.7))
+        kp_min = float(getattr(config, "pid_kp_min_sec", kp_default))
+        kp_max = float(getattr(config, "pid_kp_max_sec", kp_default))
         ki = float(getattr(config, "pid_ki_sec", 24.0))
         kd = float(getattr(config, "pid_kd_sec", 0.11))
         max_output = float(getattr(config, "pid_max_output_sec", 50.0))
+        x_speed = float(getattr(config, "pid_x_speed_sec", 1.0))
+        y_speed = float(getattr(config, "pid_y_speed_sec", 1.0))
         fov = float(get_active_aim_fov(is_sec=True, fallback=tracker.fovsize_sec))
         label = "Sec Aimbot (PID)"
     else:
-        kp = float(getattr(config, "pid_kp", 3.7))
+        kp_default = float(getattr(config, "pid_kp", 3.7))
+        kp_min = float(getattr(config, "pid_kp_min", kp_default))
+        kp_max = float(getattr(config, "pid_kp_max", kp_default))
         ki = float(getattr(config, "pid_ki", 24.0))
         kd = float(getattr(config, "pid_kd", 0.11))
         max_output = float(getattr(config, "pid_max_output", 50.0))
+        x_speed = float(getattr(config, "pid_x_speed", 1.0))
+        y_speed = float(getattr(config, "pid_y_speed", 1.0))
         fov = float(get_active_aim_fov(is_sec=False, fallback=tracker.fovsize))
         label = "Main Aimbot (PID)"
 
+    if kp_min > kp_max:
+        kp_min, kp_max = kp_max, kp_min
+
+    distance_factor = min(distance_to_center / max(fov, 1.0), 1.0)
+    kp_dynamic = kp_min + (kp_max - kp_min) * distance_factor
+
     max_output = max(0.1, abs(max_output))
-    pid_state = _get_pid_state(tracker, is_sec, kp, ki, kd, max_output)
+    pid_state = _get_pid_state(tracker, is_sec, ki, kd, max_output)
+    pid_state["x"].set_gains(kp_dynamic, ki, kd)
+    pid_state["y"].set_gains(kp_dynamic, ki, kd)
 
     integral_limit = None
     if abs(ki) > 1e-6:
@@ -271,6 +287,8 @@ def _apply_pid_aim(dx, dy, distance_to_center, tracker, is_sec=False):
 
     out_x = pid_state["x"].step(dx, integral_limit=integral_limit)
     out_y = pid_state["y"].step(dy, integral_limit=integral_limit)
+    out_x *= x_speed
+    out_y *= y_speed
     out_x = max(-max_output, min(max_output, out_x))
     out_y = max(-max_output, min(max_output, out_y))
 
@@ -295,7 +313,6 @@ def _apply_pid_aim(dx, dy, distance_to_center, tracker, is_sec=False):
     except Exception:
         pass
 
-    distance_factor = min(distance_to_center / max(fov, 1.0), 1.0)
     dynamic_delay = 0.003 * (1.0 - distance_factor * 0.3)
 
     if qdx != 0 or qdy != 0:

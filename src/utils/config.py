@@ -218,15 +218,23 @@ class Config:
 
         # --- PID Parameters (Main) ---
         self.pid_kp = 3.7
+        self.pid_kp_min = 3.7
+        self.pid_kp_max = 3.7
         self.pid_ki = 24.0
         self.pid_kd = 0.11
         self.pid_max_output = 50.0
+        self.pid_x_speed = 1.0
+        self.pid_y_speed = 1.0
 
         # --- PID Parameters (Sec) ---
         self.pid_kp_sec = 3.7
+        self.pid_kp_min_sec = 3.7
+        self.pid_kp_max_sec = 3.7
         self.pid_ki_sec = 24.0
         self.pid_kd_sec = 0.11
         self.pid_max_output_sec = 50.0
+        self.pid_x_speed_sec = 1.0
+        self.pid_y_speed_sec = 1.0
         
         # --- Silent Mode Parameters ---
         self.silent_distance = 1.0  # 绉诲嫊鍊嶇巼锛堢敤鏂艰鏁寸Щ鍕曡窛闆㈢殑鍊嶆暩锛?
@@ -513,14 +521,22 @@ class Config:
             "bezier_delay_sec": self.bezier_delay_sec,
             # PID Parameters (Main)
             "pid_kp": self.pid_kp,
+            "pid_kp_min": self.pid_kp_min,
+            "pid_kp_max": self.pid_kp_max,
             "pid_ki": self.pid_ki,
             "pid_kd": self.pid_kd,
             "pid_max_output": self.pid_max_output,
+            "pid_x_speed": self.pid_x_speed,
+            "pid_y_speed": self.pid_y_speed,
             # PID Parameters (Sec)
             "pid_kp_sec": self.pid_kp_sec,
+            "pid_kp_min_sec": self.pid_kp_min_sec,
+            "pid_kp_max_sec": self.pid_kp_max_sec,
             "pid_ki_sec": self.pid_ki_sec,
             "pid_kd_sec": self.pid_kd_sec,
             "pid_max_output_sec": self.pid_max_output_sec,
+            "pid_x_speed_sec": self.pid_x_speed_sec,
+            "pid_y_speed_sec": self.pid_y_speed_sec,
             
             # Silent Mode Parameters
             "silent_distance": self.silent_distance,
@@ -647,6 +663,50 @@ class Config:
             return mapping.get(raw.lower(), "Normal")
         self.mode = _normalize_aim_mode(getattr(self, "mode", "Normal"))
         self.mode_sec = _normalize_aim_mode(getattr(self, "mode_sec", "Normal"))
+        if isinstance(data, dict) and "pid_kp_min" not in data:
+            self.pid_kp_min = float(getattr(self, "pid_kp", 3.7))
+        if isinstance(data, dict) and "pid_kp_max" not in data:
+            self.pid_kp_max = float(getattr(self, "pid_kp", 3.7))
+        if isinstance(data, dict) and "pid_kp_min_sec" not in data:
+            self.pid_kp_min_sec = float(getattr(self, "pid_kp_sec", 3.7))
+        if isinstance(data, dict) and "pid_kp_max_sec" not in data:
+            self.pid_kp_max_sec = float(getattr(self, "pid_kp_sec", 3.7))
+        try:
+            self.pid_kp_min = float(getattr(self, "pid_kp_min", getattr(self, "pid_kp", 3.7)))
+        except Exception:
+            self.pid_kp_min = float(getattr(self, "pid_kp", 3.7))
+        try:
+            self.pid_kp_max = float(getattr(self, "pid_kp_max", getattr(self, "pid_kp", 3.7)))
+        except Exception:
+            self.pid_kp_max = float(getattr(self, "pid_kp", 3.7))
+        try:
+            self.pid_kp_min_sec = float(getattr(self, "pid_kp_min_sec", getattr(self, "pid_kp_sec", 3.7)))
+        except Exception:
+            self.pid_kp_min_sec = float(getattr(self, "pid_kp_sec", 3.7))
+        try:
+            self.pid_kp_max_sec = float(getattr(self, "pid_kp_max_sec", getattr(self, "pid_kp_sec", 3.7)))
+        except Exception:
+            self.pid_kp_max_sec = float(getattr(self, "pid_kp_sec", 3.7))
+        if self.pid_kp_min > self.pid_kp_max:
+            self.pid_kp_min, self.pid_kp_max = self.pid_kp_max, self.pid_kp_min
+        if self.pid_kp_min_sec > self.pid_kp_max_sec:
+            self.pid_kp_min_sec, self.pid_kp_max_sec = self.pid_kp_max_sec, self.pid_kp_min_sec
+        try:
+            self.pid_x_speed = float(getattr(self, "pid_x_speed", 1.0))
+        except Exception:
+            self.pid_x_speed = 1.0
+        try:
+            self.pid_y_speed = float(getattr(self, "pid_y_speed", 1.0))
+        except Exception:
+            self.pid_y_speed = 1.0
+        try:
+            self.pid_x_speed_sec = float(getattr(self, "pid_x_speed_sec", 1.0))
+        except Exception:
+            self.pid_x_speed_sec = 1.0
+        try:
+            self.pid_y_speed_sec = float(getattr(self, "pid_y_speed_sec", 1.0))
+        except Exception:
+            self.pid_y_speed_sec = 1.0
         ads_key_type = str(getattr(self, "ads_key_type", "hold")).strip().lower()
         self.ads_key_type = "toggle" if ads_key_type == "toggle" else "hold"
         ads_key_type_sec = str(getattr(self, "ads_key_type_sec", "hold")).strip().lower()

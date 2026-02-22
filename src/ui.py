@@ -2676,9 +2676,12 @@ class ViewerApp(ctk.CTk):
         
         elif current_mode == "PID":
             self._add_subtitle_in_frame(sec_params, "PID PARAMETERS")
-            self._add_slider_in_frame(sec_params, "Kp", "pid_kp", 0.0, 20.0,
-                                      float(getattr(config, "pid_kp", 3.7)),
-                                      self._on_pid_kp_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Kp Min", "pid_kp_min", 0.0, 20.0,
+                                      float(getattr(config, "pid_kp_min", getattr(config, "pid_kp", 3.7))),
+                                      self._on_pid_kp_min_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Kp Max", "pid_kp_max", 0.0, 20.0,
+                                      float(getattr(config, "pid_kp_max", getattr(config, "pid_kp", 3.7))),
+                                      self._on_pid_kp_max_changed, is_float=True)
             self._add_slider_in_frame(sec_params, "Ki", "pid_ki", 0.0, 100.0,
                                       float(getattr(config, "pid_ki", 24.0)),
                                       self._on_pid_ki_changed, is_float=True)
@@ -2688,6 +2691,12 @@ class ViewerApp(ctk.CTk):
             self._add_slider_in_frame(sec_params, "Max Output", "pid_max_output", 1.0, 200.0,
                                       float(getattr(config, "pid_max_output", 50.0)),
                                       self._on_pid_max_output_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "X Speed", "pid_x_speed", 0.1, 5.0,
+                                      float(getattr(config, "pid_x_speed", 1.0)),
+                                      self._on_pid_x_speed_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Y Speed", "pid_y_speed", 0.1, 5.0,
+                                      float(getattr(config, "pid_y_speed", 1.0)),
+                                      self._on_pid_y_speed_changed, is_float=True)
             self._add_spacer_in_frame(sec_params)
             self._add_subtitle_in_frame(sec_params, "FOV")
             self._add_slider_in_frame(sec_params, "FOV Size", "fovsize", 1, 1000,
@@ -2909,9 +2918,12 @@ class ViewerApp(ctk.CTk):
         
         elif current_mode_sec == "PID":
             self._add_subtitle_in_frame(sec_params, "PID PARAMETERS")
-            self._add_slider_in_frame(sec_params, "Kp", "pid_kp_sec", 0.0, 20.0,
-                                      float(getattr(config, "pid_kp_sec", 3.7)),
-                                      self._on_pid_kp_sec_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Kp Min", "pid_kp_min_sec", 0.0, 20.0,
+                                      float(getattr(config, "pid_kp_min_sec", getattr(config, "pid_kp_sec", 3.7))),
+                                      self._on_pid_kp_min_sec_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Kp Max", "pid_kp_max_sec", 0.0, 20.0,
+                                      float(getattr(config, "pid_kp_max_sec", getattr(config, "pid_kp_sec", 3.7))),
+                                      self._on_pid_kp_max_sec_changed, is_float=True)
             self._add_slider_in_frame(sec_params, "Ki", "pid_ki_sec", 0.0, 100.0,
                                       float(getattr(config, "pid_ki_sec", 24.0)),
                                       self._on_pid_ki_sec_changed, is_float=True)
@@ -2921,6 +2933,12 @@ class ViewerApp(ctk.CTk):
             self._add_slider_in_frame(sec_params, "Max Output", "pid_max_output_sec", 1.0, 200.0,
                                       float(getattr(config, "pid_max_output_sec", 50.0)),
                                       self._on_pid_max_output_sec_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "X Speed", "pid_x_speed_sec", 0.1, 5.0,
+                                      float(getattr(config, "pid_x_speed_sec", 1.0)),
+                                      self._on_pid_x_speed_sec_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Y Speed", "pid_y_speed_sec", 0.1, 5.0,
+                                      float(getattr(config, "pid_y_speed_sec", 1.0)),
+                                      self._on_pid_y_speed_sec_changed, is_float=True)
             self._add_spacer_in_frame(sec_params)
             self._add_subtitle_in_frame(sec_params, "FOV")
             self._add_slider_in_frame(sec_params, "FOV Size", "fovsize_sec", 1, 1000,
@@ -6949,7 +6967,23 @@ class ViewerApp(ctk.CTk):
     
     # --- PID Callbacks (Main) ---
     def _on_pid_kp_changed(self, val):
-        config.pid_kp = float(val)
+        # Legacy callback compatibility: keep fixed Kp by syncing min/max.
+        kp = float(val)
+        config.pid_kp = kp
+        config.pid_kp_min = kp
+        config.pid_kp_max = kp
+
+    def _on_pid_kp_min_changed(self, val):
+        kp_min = float(val)
+        config.pid_kp_min = kp_min
+        if float(getattr(config, "pid_kp_max", kp_min)) < kp_min:
+            config.pid_kp_max = kp_min
+
+    def _on_pid_kp_max_changed(self, val):
+        kp_max = float(val)
+        config.pid_kp_max = kp_max
+        if float(getattr(config, "pid_kp_min", kp_max)) > kp_max:
+            config.pid_kp_min = kp_max
 
     def _on_pid_ki_changed(self, val):
         config.pid_ki = float(val)
@@ -6960,9 +6994,31 @@ class ViewerApp(ctk.CTk):
     def _on_pid_max_output_changed(self, val):
         config.pid_max_output = float(val)
 
+    def _on_pid_x_speed_changed(self, val):
+        config.pid_x_speed = float(val)
+
+    def _on_pid_y_speed_changed(self, val):
+        config.pid_y_speed = float(val)
+
     # --- PID Callbacks (Sec) ---
     def _on_pid_kp_sec_changed(self, val):
-        config.pid_kp_sec = float(val)
+        # Legacy callback compatibility: keep fixed Kp by syncing min/max.
+        kp = float(val)
+        config.pid_kp_sec = kp
+        config.pid_kp_min_sec = kp
+        config.pid_kp_max_sec = kp
+
+    def _on_pid_kp_min_sec_changed(self, val):
+        kp_min = float(val)
+        config.pid_kp_min_sec = kp_min
+        if float(getattr(config, "pid_kp_max_sec", kp_min)) < kp_min:
+            config.pid_kp_max_sec = kp_min
+
+    def _on_pid_kp_max_sec_changed(self, val):
+        kp_max = float(val)
+        config.pid_kp_max_sec = kp_max
+        if float(getattr(config, "pid_kp_min_sec", kp_max)) > kp_max:
+            config.pid_kp_min_sec = kp_max
 
     def _on_pid_ki_sec_changed(self, val):
         config.pid_ki_sec = float(val)
@@ -6972,6 +7028,12 @@ class ViewerApp(ctk.CTk):
 
     def _on_pid_max_output_sec_changed(self, val):
         config.pid_max_output_sec = float(val)
+
+    def _on_pid_x_speed_sec_changed(self, val):
+        config.pid_x_speed_sec = float(val)
+
+    def _on_pid_y_speed_sec_changed(self, val):
+        config.pid_y_speed_sec = float(val)
 
     def _on_aimbot_button_selected(self, val):
         for k, name in BUTTONS.items():
