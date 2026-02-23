@@ -739,6 +739,10 @@ class ViewerApp(ctk.CTk):
         self._slider_widgets = {}
         if hasattr(self, "_range_slider_widgets"):
             self._range_slider_widgets = {}
+        self._pid_preview_canvas_main = None
+        self._pid_preview_canvas_sec = None
+        self._pid_preview_info_main = None
+        self._pid_preview_info_sec = None
 
     def _toggle_theme(self):
         if ctk.get_appearance_mode() == "Dark":
@@ -2703,6 +2707,7 @@ class ViewerApp(ctk.CTk):
                                       float(getattr(config, "fovsize", 300)),
                                       self._on_fovsize_changed)
             self._add_ads_fov_controls_in_frame(sec_params, is_sec=False)
+            self._add_pid_preview_section(is_sec=False)
         
         # 鈹€鈹€ OFFSET (collapsible) 鈹€鈹€
         sec_offset = self._create_collapsible_section(self.content_frame, "Offset", initially_open=False)
@@ -2945,6 +2950,7 @@ class ViewerApp(ctk.CTk):
                                       float(getattr(config, "fovsize_sec", 150)),
                                       self._on_fovsize_sec_changed)
             self._add_ads_fov_controls_in_frame(sec_params, is_sec=True)
+            self._add_pid_preview_section(is_sec=True)
         
         # 鈹€鈹€ OFFSET (collapsible) 鈹€鈹€
         sec_offset = self._create_collapsible_section(self.content_frame, "Offset", initially_open=False)
@@ -4460,6 +4466,220 @@ class ViewerApp(ctk.CTk):
                 float(getattr(config, slider_key, fallback_fov)),
                 self._on_trigger_ads_fovsize_changed,
             )
+
+    def _add_pid_preview_section(self, is_sec=False):
+        state_key = "pid_preview_sec" if is_sec else "pid_preview_main"
+        sec_preview = self._create_collapsible_section(
+            self.content_frame,
+            "PID Preview",
+            initially_open=True,
+            state_key=state_key,
+        )
+
+        ctk.CTkLabel(
+            sec_preview,
+            text="Simulated response preview (average X/Y speed, single-axis model)",
+            font=("Roboto", 10),
+            text_color=COLOR_TEXT_DIM,
+        ).pack(anchor="w", pady=(2, 6))
+
+        canvas = tk.Canvas(
+            sec_preview,
+            height=180,
+            bg=COLOR_BG,
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=COLOR_BORDER,
+            highlightcolor=COLOR_BORDER,
+        )
+        canvas.pack(fill="x", pady=(0, 6))
+
+        info_label = ctk.CTkLabel(
+            sec_preview,
+            text="",
+            font=("Roboto", 10),
+            text_color=COLOR_TEXT_DIM,
+            anchor="w",
+            justify="left",
+        )
+        info_label.pack(fill="x")
+
+        if is_sec:
+            self._pid_preview_canvas_sec = canvas
+            self._pid_preview_info_sec = info_label
+        else:
+            self._pid_preview_canvas_main = canvas
+            self._pid_preview_info_main = info_label
+
+        canvas.bind("<Configure>", lambda _event, sec=is_sec: self._refresh_pid_preview(is_sec=sec))
+        self.after(20, lambda sec=is_sec: self._refresh_pid_preview(is_sec=sec))
+
+    def _get_pid_preview_widgets(self, is_sec=False):
+        if is_sec:
+            return getattr(self, "_pid_preview_canvas_sec", None), getattr(self, "_pid_preview_info_sec", None)
+        return getattr(self, "_pid_preview_canvas_main", None), getattr(self, "_pid_preview_info_main", None)
+
+    def _simulate_pid_preview(self, is_sec=False, steps=72):
+        if is_sec:
+            kp_default = float(getattr(config, "pid_kp_sec", 3.7))
+            kp_min = float(getattr(config, "pid_kp_min_sec", kp_default))
+            kp_max = float(getattr(config, "pid_kp_max_sec", kp_default))
+            ki = float(getattr(config, "pid_ki_sec", 24.0))
+            kd = float(getattr(config, "pid_kd_sec", 0.11))
+            max_output = float(getattr(config, "pid_max_output_sec", 50.0))
+            x_speed = float(getattr(config, "pid_x_speed_sec", 1.0))
+            y_speed = float(getattr(config, "pid_y_speed_sec", 1.0))
+            fov = float(getattr(config, "fovsize_sec", 150.0))
+        else:
+            kp_default = float(getattr(config, "pid_kp", 3.7))
+            kp_min = float(getattr(config, "pid_kp_min", kp_default))
+            kp_max = float(getattr(config, "pid_kp_max", kp_default))
+            ki = float(getattr(config, "pid_ki", 24.0))
+            kd = float(getattr(config, "pid_kd", 0.11))
+            max_output = float(getattr(config, "pid_max_output", 50.0))
+            x_speed = float(getattr(config, "pid_x_speed", 1.0))
+            y_speed = float(getattr(config, "pid_y_speed", 1.0))
+            fov = float(getattr(config, "fovsize", 100.0))
+
+        if kp_min > kp_max:
+            kp_min, kp_max = kp_max, kp_min
+
+        fov = max(1.0, fov)
+        max_output = max(0.1, abs(max_output))
+        avg_speed = max(0.1, (x_speed + y_speed) / 2.0)
+        target_fps = float(getattr(config, "target_fps", 80) or 80)
+        dt = 1.0 / max(1.0, target_fps)
+        plant_gain = max(0.06, min(0.35, 14.0 / max(14.0, fov)))
+        err = max(8.0, min(fov * 0.6, 220.0))
+        prev_err = err
+        integral = 0.0
+
+        integral_limit = None
+        if abs(ki) > 1e-6:
+            integral_limit = max_output / abs(ki)
+
+        error_series = []
+        output_series = []
+        for idx in range(max(2, int(steps))):
+            distance_factor = min(abs(err) / fov, 1.0)
+            kp_dynamic = kp_min + (kp_max - kp_min) * distance_factor
+
+            derivative = 0.0
+            if idx > 0 and dt > 1e-6:
+                integral += err * dt
+                if integral_limit is not None:
+                    integral = max(-integral_limit, min(integral_limit, integral))
+                derivative = (err - prev_err) / dt
+
+            output = (kp_dynamic * err) + (ki * integral) + (kd * derivative)
+            output *= avg_speed
+            output = max(-max_output, min(max_output, output))
+
+            prev_err = err
+            err = err - (output * plant_gain)
+            err = max(-fov * 1.2, min(fov * 1.2, err))
+
+            error_series.append(err)
+            output_series.append(output)
+
+        return {
+            "error_series": error_series,
+            "output_series": output_series,
+            "start_error": max(8.0, min(fov * 0.6, 220.0)),
+            "fov": fov,
+            "target_fps": target_fps,
+            "max_output": max_output,
+        }
+
+    def _find_pid_settle_frame(self, series, tolerance):
+        if not series:
+            return None
+        window = 8
+        for idx, _ in enumerate(series):
+            chunk = series[idx:idx + window]
+            if len(chunk) < window:
+                break
+            if all(abs(v) <= tolerance for v in chunk):
+                return idx + 1
+        return None
+
+    def _refresh_pid_preview(self, is_sec=False):
+        canvas, info_label = self._get_pid_preview_widgets(is_sec=is_sec)
+        if canvas is None or info_label is None:
+            return
+        try:
+            if not bool(canvas.winfo_exists()) or not bool(info_label.winfo_exists()):
+                return
+        except Exception:
+            return
+
+        data = self._simulate_pid_preview(is_sec=is_sec)
+        error_series = data["error_series"]
+        output_series = data["output_series"]
+        if not error_series or not output_series:
+            return
+
+        canvas.delete("all")
+        width = int(canvas.winfo_width())
+        height = int(canvas.winfo_height())
+        if width <= 2:
+            width = int(float(canvas.cget("width")))
+        if height <= 2:
+            height = int(float(canvas.cget("height")))
+
+        left = 36
+        right = max(left + 20, width - 10)
+        top = 16
+        bottom = max(top + 20, height - 24)
+        center_y = (top + bottom) / 2.0
+        plot_height = max(8.0, (bottom - top) / 2.0)
+        max_abs = max(
+            1.0,
+            max(abs(v) for v in error_series),
+            max(abs(v) for v in output_series),
+        )
+        y_scale = plot_height / (max_abs * 1.1)
+        x_span = max(1, len(error_series) - 1)
+
+        canvas.create_rectangle(left, top, right, bottom, outline=COLOR_BORDER, width=1)
+        canvas.create_line(left, center_y, right, center_y, fill=COLOR_BORDER, width=1, dash=(2, 2))
+
+        for ratio in (-0.5, 0.5):
+            y = center_y - (ratio * plot_height * 2.0)
+            canvas.create_line(left, y, right, y, fill=COLOR_BORDER, width=1, dash=(2, 4))
+
+        def _series_points(series):
+            pts = []
+            for idx, value in enumerate(series):
+                x = left + ((right - left) * (idx / x_span))
+                y = center_y - (value * y_scale)
+                pts.extend((x, y))
+            return pts
+
+        canvas.create_line(_series_points(error_series), fill="#5EE173", width=2, smooth=True)
+        canvas.create_line(_series_points(output_series), fill=COLOR_ACCENT, width=2, smooth=True)
+        canvas.create_text(left + 6, top + 8, text="Error", fill="#5EE173", anchor="w", font=("Consolas", 9))
+        canvas.create_text(left + 58, top + 8, text="Output", fill=COLOR_ACCENT, anchor="w", font=("Consolas", 9))
+        canvas.create_text(left - 6, top + 2, text="+", fill=COLOR_TEXT_DIM, anchor="e", font=("Consolas", 9))
+        canvas.create_text(left - 6, center_y, text="0", fill=COLOR_TEXT_DIM, anchor="e", font=("Consolas", 9))
+        canvas.create_text(left - 6, bottom - 2, text="-", fill=COLOR_TEXT_DIM, anchor="e", font=("Consolas", 9))
+
+        tolerance = max(1.0, data["fov"] * 0.03)
+        settle_frame = self._find_pid_settle_frame(error_series, tolerance=tolerance)
+        settle_text = f"{settle_frame} frames" if settle_frame is not None else "Not settled"
+        info_label.configure(
+            text=(
+                f"Start Error: {data['start_error']:.1f}px | End Error: {error_series[-1]:.1f}px | "
+                f"Peak Output: {max(abs(v) for v in output_series):.1f} | Settle: {settle_text} | "
+                f"FPS: {data['target_fps']:.0f}"
+            )
+        )
+
+    def _refresh_pid_preview_if_pid_mode(self, is_sec=False):
+        mode_key = "mode_sec" if is_sec else "mode"
+        mode_value = self._aim_mode_display_to_value(getattr(config, mode_key, "Normal"))
+        if mode_value == "PID":
+            self._refresh_pid_preview(is_sec=is_sec)
 
     def _ads_binding_to_display(self, binding_value):
         if binding_value is None:
@@ -6460,6 +6680,7 @@ class ViewerApp(ctk.CTk):
     def _on_fovsize_changed(self, val): 
         config.fovsize = val
         self.tracker.fovsize = val
+        self._refresh_pid_preview_if_pid_mode(is_sec=False)
     
     def _on_aim_offsetX_changed(self, val):
         config.aim_offsetX = val
@@ -6787,6 +7008,7 @@ class ViewerApp(ctk.CTk):
     def _on_fovsize_sec_changed(self, val): 
         config.fovsize_sec = val
         self.tracker.fovsize_sec = val
+        self._refresh_pid_preview_if_pid_mode(is_sec=True)
     
     def _on_aim_offsetX_sec_changed(self, val):
         config.aim_offsetX_sec = val
@@ -6972,33 +7194,43 @@ class ViewerApp(ctk.CTk):
         config.pid_kp = kp
         config.pid_kp_min = kp
         config.pid_kp_max = kp
+        self._refresh_pid_preview(is_sec=False)
 
     def _on_pid_kp_min_changed(self, val):
         kp_min = float(val)
         config.pid_kp_min = kp_min
         if float(getattr(config, "pid_kp_max", kp_min)) < kp_min:
             config.pid_kp_max = kp_min
+            self._set_slider_value("pid_kp_max", kp_min)
+        self._refresh_pid_preview(is_sec=False)
 
     def _on_pid_kp_max_changed(self, val):
         kp_max = float(val)
         config.pid_kp_max = kp_max
         if float(getattr(config, "pid_kp_min", kp_max)) > kp_max:
             config.pid_kp_min = kp_max
+            self._set_slider_value("pid_kp_min", kp_max)
+        self._refresh_pid_preview(is_sec=False)
 
     def _on_pid_ki_changed(self, val):
         config.pid_ki = float(val)
+        self._refresh_pid_preview(is_sec=False)
 
     def _on_pid_kd_changed(self, val):
         config.pid_kd = float(val)
+        self._refresh_pid_preview(is_sec=False)
 
     def _on_pid_max_output_changed(self, val):
         config.pid_max_output = float(val)
+        self._refresh_pid_preview(is_sec=False)
 
     def _on_pid_x_speed_changed(self, val):
         config.pid_x_speed = float(val)
+        self._refresh_pid_preview(is_sec=False)
 
     def _on_pid_y_speed_changed(self, val):
         config.pid_y_speed = float(val)
+        self._refresh_pid_preview(is_sec=False)
 
     # --- PID Callbacks (Sec) ---
     def _on_pid_kp_sec_changed(self, val):
@@ -7007,33 +7239,43 @@ class ViewerApp(ctk.CTk):
         config.pid_kp_sec = kp
         config.pid_kp_min_sec = kp
         config.pid_kp_max_sec = kp
+        self._refresh_pid_preview(is_sec=True)
 
     def _on_pid_kp_min_sec_changed(self, val):
         kp_min = float(val)
         config.pid_kp_min_sec = kp_min
         if float(getattr(config, "pid_kp_max_sec", kp_min)) < kp_min:
             config.pid_kp_max_sec = kp_min
+            self._set_slider_value("pid_kp_max_sec", kp_min)
+        self._refresh_pid_preview(is_sec=True)
 
     def _on_pid_kp_max_sec_changed(self, val):
         kp_max = float(val)
         config.pid_kp_max_sec = kp_max
         if float(getattr(config, "pid_kp_min_sec", kp_max)) > kp_max:
             config.pid_kp_min_sec = kp_max
+            self._set_slider_value("pid_kp_min_sec", kp_max)
+        self._refresh_pid_preview(is_sec=True)
 
     def _on_pid_ki_sec_changed(self, val):
         config.pid_ki_sec = float(val)
+        self._refresh_pid_preview(is_sec=True)
 
     def _on_pid_kd_sec_changed(self, val):
         config.pid_kd_sec = float(val)
+        self._refresh_pid_preview(is_sec=True)
 
     def _on_pid_max_output_sec_changed(self, val):
         config.pid_max_output_sec = float(val)
+        self._refresh_pid_preview(is_sec=True)
 
     def _on_pid_x_speed_sec_changed(self, val):
         config.pid_x_speed_sec = float(val)
+        self._refresh_pid_preview(is_sec=True)
 
     def _on_pid_y_speed_sec_changed(self, val):
         config.pid_y_speed_sec = float(val)
+        self._refresh_pid_preview(is_sec=True)
 
     def _on_aimbot_button_selected(self, val):
         for k, name in BUTTONS.items():
