@@ -37,6 +37,7 @@ except ImportError as e:
     log_print(f"[Capture] MSS module import failed: {e}")
 
 # 鍢楄│灏庡叆 CaptureCardGStreamer
+HAS_GSTREAMER = False
 try:
     import ctypes
     import os
