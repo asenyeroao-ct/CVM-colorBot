@@ -277,6 +277,10 @@ class ViewerApp(ctk.CTk):
         # --- Capture control cache (restore from config) ---
         self.saved_udp_ip = getattr(config, "udp_ip", "127.0.0.1")
         self.saved_udp_port = getattr(config, "udp_port", "1234")
+        self.saved_teleport_host = str(getattr(config, "teleport_host", ""))
+        self.saved_teleport_port = str(getattr(config, "teleport_port", "0"))
+        self.saved_teleport_stream_key = str(getattr(config, "teleport_stream_key", ""))
+        self._teleport_stream_display_to_key = {}
         self.saved_ndi_source = getattr(config, "last_ndi_source", None)
         self.saved_mouse_api = getattr(config, "mouse_api", "Serial")
         self.saved_net_ip = getattr(config, "net_ip", "192.168.2.188")
@@ -839,6 +843,11 @@ class ViewerApp(ctk.CTk):
         self.saved_net_ip = getattr(config, "net_ip", self.saved_net_ip)
         self.saved_net_port = getattr(config, "net_port", self.saved_net_port)
         self.saved_net_uuid = getattr(config, "net_uuid", getattr(config, "net_mac", self.saved_net_uuid))
+        self.saved_teleport_host = str(getattr(config, "teleport_host", self.saved_teleport_host))
+        self.saved_teleport_port = str(getattr(config, "teleport_port", self.saved_teleport_port))
+        self.saved_teleport_stream_key = str(
+            getattr(config, "teleport_stream_key", self.saved_teleport_stream_key)
+        )
         self.saved_kmboxa_vid_pid = str(
             getattr(
                 config,
@@ -868,7 +877,12 @@ class ViewerApp(ctk.CTk):
         # Capture Method Selection
         self.capture_method_var.set(self.capture.mode)
         # 鍓靛缓 option menu
-        self.capture_method_option = self._add_option_row_in_frame(sec_capture, "Method", ["NDI", "UDP", "Capture Card (OpenCV)", "Capture Card (GStreamer)", "MSS"], self._on_capture_method_changed)
+        self.capture_method_option = self._add_option_row_in_frame(
+            sec_capture,
+            "Method",
+            ["NDI", "UDP", "Teleport", "Capture Card (OpenCV)", "Capture Card (GStreamer)", "MSS"],
+            self._on_capture_method_changed,
+        )
         # 椤紡瑷疆鐣跺墠鍊?
         # Map internal mode to UI display name
         display_mode = self.capture.mode
@@ -1915,6 +1929,14 @@ class ViewerApp(ctk.CTk):
             self.saved_udp_ip = self.udp_ip_entry.get()
         if hasattr(self, 'udp_port_entry') and self.udp_port_entry.winfo_exists():
             self.saved_udp_port = self.udp_port_entry.get()
+        if hasattr(self, 'teleport_host_entry') and self.teleport_host_entry.winfo_exists():
+            self.saved_teleport_host = self.teleport_host_entry.get()
+        if hasattr(self, 'teleport_port_entry') and self.teleport_port_entry.winfo_exists():
+            self.saved_teleport_port = self.teleport_port_entry.get()
+        if hasattr(self, 'teleport_stream_option') and self.teleport_stream_option.winfo_exists():
+            selected_display = self.teleport_stream_option.get()
+            selected_key = self._teleport_stream_display_to_key.get(str(selected_display), "")
+            self.saved_teleport_stream_key = str(selected_key)
         
         # 淇濆瓨鐣跺墠 NDI 閬告搰鐨勬簮锛堝鏋滃瓨鍦級
         if hasattr(self, 'source_option') and self.source_option.winfo_exists():
@@ -2115,6 +2137,62 @@ class ViewerApp(ctk.CTk):
                 font=("Roboto", 9), text_color=COLOR_TEXT_DIM
             )
             self.udp_fov_info_label.pack(anchor="w", pady=(0, 5))
+
+        elif method == "Teleport":
+            # Teleport Controls
+            self._add_subtitle_in_frame(self.capture_content_frame, "OBS TELEPORT")
+            ctk.CTkLabel(
+                self.capture_content_frame,
+                text="Use discovered stream or provide manual Host/Port.",
+                font=("Roboto", 9),
+                text_color=COLOR_TEXT_DIM,
+            ).pack(anchor="w", pady=(0, 8))
+
+            if hasattr(self.capture, "ensure_teleport_discovery_running"):
+                self.capture.ensure_teleport_discovery_running()
+
+            self.teleport_stream_option = self._add_option_row_in_frame(
+                self.capture_content_frame,
+                "Discovered Stream",
+                ["Manual Endpoint"],
+                self._on_teleport_stream_selected,
+            )
+            self._refresh_teleport_streams(show_status=False)
+
+            host_frame = ctk.CTkFrame(self.capture_content_frame, fg_color="transparent")
+            host_frame.pack(fill="x", pady=5)
+            ctk.CTkLabel(host_frame, text="Host", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.teleport_host_entry = ctk.CTkEntry(
+                host_frame,
+                fg_color=COLOR_SURFACE,
+                border_width=0,
+                text_color=COLOR_TEXT,
+                width=180,
+            )
+            self.teleport_host_entry.pack(side="right")
+            self.teleport_host_entry.insert(0, self.saved_teleport_host)
+            self.teleport_host_entry.bind("<KeyRelease>", self._on_teleport_host_changed)
+            self.teleport_host_entry.bind("<FocusOut>", self._on_teleport_host_changed)
+
+            port_frame = ctk.CTkFrame(self.capture_content_frame, fg_color="transparent")
+            port_frame.pack(fill="x", pady=5)
+            ctk.CTkLabel(port_frame, text="Port", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.teleport_port_entry = ctk.CTkEntry(
+                port_frame,
+                fg_color=COLOR_SURFACE,
+                border_width=0,
+                text_color=COLOR_TEXT,
+                width=180,
+            )
+            self.teleport_port_entry.pack(side="right")
+            self.teleport_port_entry.insert(0, self.saved_teleport_port)
+            self.teleport_port_entry.bind("<KeyRelease>", self._on_teleport_port_changed)
+            self.teleport_port_entry.bind("<FocusOut>", self._on_teleport_port_changed)
+
+            btn_frame = ctk.CTkFrame(self.capture_content_frame, fg_color="transparent")
+            btn_frame.pack(fill="x", pady=10)
+            self._add_text_button(btn_frame, "REFRESH", self._refresh_teleport_streams).pack(side="left")
+            self._add_text_button(btn_frame, "CONNECT", self._connect_teleport).pack(side="left", padx=15)
             
         elif method in ["CaptureCard", "CaptureCardGStreamer"]:
             # CaptureCard Controls (shared UI for both OpenCV and GStreamer)
@@ -2331,6 +2409,122 @@ class ViewerApp(ctk.CTk):
             val = self.udp_port_entry.get()
             self.saved_udp_port = val
             config.udp_port = val
+
+    def _refresh_teleport_streams(self, show_status=True):
+        """Refresh OBS Teleport discovered streams list."""
+        if self.capture.mode != "Teleport":
+            return
+
+        streams = []
+        if hasattr(self.capture, "ensure_teleport_discovery_running"):
+            self.capture.ensure_teleport_discovery_running()
+        if hasattr(self.capture, "get_teleport_discovered_streams"):
+            streams = self.capture.get_teleport_discovered_streams()
+
+        display_to_key = {"Manual Endpoint": ""}
+        option_values = ["Manual Endpoint"]
+        for stream in streams or []:
+            stream_key = str(stream.get("key", "")).strip()
+            if not stream_key:
+                continue
+            name = str(stream.get("name", "Unknown")).strip() or "Unknown"
+            address = str(stream.get("address", "")).strip()
+            try:
+                port = int(stream.get("port", 0) or 0)
+            except Exception:
+                port = 0
+            label_base = f"{name} ({address}:{port})" if address else f"{name} ({port})"
+            label = label_base
+            suffix = 2
+            while label in display_to_key:
+                label = f"{label_base} #{suffix}"
+                suffix += 1
+            display_to_key[label] = stream_key
+            option_values.append(label)
+
+        self._teleport_stream_display_to_key = display_to_key
+
+        if hasattr(self, "teleport_stream_option") and self.teleport_stream_option.winfo_exists():
+            self.teleport_stream_option.configure(values=option_values)
+
+            selected_key = str(getattr(config, "teleport_stream_key", self.saved_teleport_stream_key)).strip()
+            selected_display = "Manual Endpoint"
+            for display_text, key in display_to_key.items():
+                if key and key == selected_key:
+                    selected_display = display_text
+                    break
+            self.teleport_stream_option.set(selected_display)
+            self._on_teleport_stream_selected(selected_display)
+
+        if show_status:
+            self._set_status_indicator(
+                f"Status: Teleport streams {max(0, len(option_values) - 1)}",
+                COLOR_TEXT,
+            )
+
+    def _on_teleport_stream_selected(self, val):
+        """Handle Teleport discovered stream selection."""
+        stream_key = str(self._teleport_stream_display_to_key.get(str(val), "")).strip()
+        self.saved_teleport_stream_key = stream_key
+        config.teleport_stream_key = stream_key
+
+    def _on_teleport_host_changed(self, event=None):
+        """Handle Teleport host input update."""
+        if hasattr(self, "teleport_host_entry") and self.teleport_host_entry.winfo_exists():
+            host = self.teleport_host_entry.get().strip()
+            self.saved_teleport_host = host
+            config.teleport_host = host
+
+    def _on_teleport_port_changed(self, event=None):
+        """Handle Teleport port input update."""
+        if hasattr(self, "teleport_port_entry") and self.teleport_port_entry.winfo_exists():
+            port_text = self.teleport_port_entry.get().strip()
+            self.saved_teleport_port = port_text
+            config.teleport_port = port_text
+
+    def _connect_teleport(self):
+        """Connect OBS Teleport source."""
+        if self.capture.mode != "Teleport":
+            return
+
+        host = str(getattr(config, "teleport_host", self.saved_teleport_host)).strip()
+        port_value = str(getattr(config, "teleport_port", self.saved_teleport_port)).strip()
+        stream_key = str(getattr(config, "teleport_stream_key", self.saved_teleport_stream_key)).strip()
+
+        if hasattr(self, "teleport_host_entry") and self.teleport_host_entry.winfo_exists():
+            host = self.teleport_host_entry.get().strip()
+        if hasattr(self, "teleport_port_entry") and self.teleport_port_entry.winfo_exists():
+            port_value = self.teleport_port_entry.get().strip()
+        if hasattr(self, "teleport_stream_option") and self.teleport_stream_option.winfo_exists():
+            selected_display = self.teleport_stream_option.get()
+            stream_key = str(self._teleport_stream_display_to_key.get(str(selected_display), "")).strip()
+
+        self.saved_teleport_host = host
+        self.saved_teleport_port = port_value
+        self.saved_teleport_stream_key = stream_key
+        config.teleport_host = host
+        config.teleport_port = port_value
+        config.teleport_stream_key = stream_key
+
+        success, error = self.capture.connect_teleport(
+            host=host,
+            port=port_value,
+            stream_key=stream_key,
+        )
+        if success:
+            snapshot = {}
+            if hasattr(self.capture, "get_teleport_connection_snapshot"):
+                snapshot = self.capture.get_teleport_connection_snapshot()
+            phase = str(snapshot.get("phase", "")).strip()
+            if phase == "Connected":
+                self._set_status_indicator("Status: Teleport connected", COLOR_TEXT)
+            elif phase in ("Connecting", "WaitingForDiscovery", "WaitingForEndpoint"):
+                self._set_status_indicator(f"Status: Teleport {phase}", COLOR_WARNING)
+            else:
+                self._set_status_indicator("Status: Teleport started", COLOR_TEXT)
+        else:
+            self._set_status_indicator(f"Status: Teleport connect failed: {error}", COLOR_DANGER)
+            log_print(f"[UI] Teleport connection failed: {error}")
     
     def _on_capture_card_device_changed(self, event=None):
         """瀵︽檪淇濆瓨 CaptureCard Device Index"""
@@ -6507,6 +6701,17 @@ class ViewerApp(ctk.CTk):
                     processing_delay = stats.get('processing_delay_ms', 0)
                     total_delay = receive_delay + decode_delay + processing_delay
                     self.total_delay_label.configure(text=f"Delay: {total_delay:.1f} ms")
+            elif self.capture.mode == "Teleport" and self.capture.is_connected():
+                receiver = None
+                if getattr(self.capture, "teleport_manager", None):
+                    receiver = self.capture.teleport_manager.get_receiver()
+                if receiver:
+                    stats = receiver.get_performance_stats()
+                    current_fps = stats.get('current_fps', 0)
+                    decode_delay = stats.get('decode_delay_ms', 0)
+                    self.fps_label.configure(text=f"FPS: {current_fps:.1f}")
+                    self.decode_delay_label.configure(text=f"Decode: {decode_delay:.1f} ms")
+                    self.total_delay_label.configure(text=f"Delay: {decode_delay:.1f} ms")
             elif self.capture.mode == "NDI" and self.capture.is_connected():
                 # NDI 妯″紡锛氬緸 tracker 鐛插彇绨″柈鐨?FPS 淇℃伅
                 if hasattr(self.tracker, '_frame_count'):

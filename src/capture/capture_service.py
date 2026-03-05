@@ -15,6 +15,17 @@ except ImportError as e:
     log_print(f"[Capture] OBS_UDP module import failed: {e}")
     log_print("[Capture] UDP mode will be unavailable. Please ensure OBS_UDP.py exists in 'capture/' folder.")
 
+# 灏庡叆 OBS Teleport 妯＄祫 (Python implementation)
+try:
+    from .obs_teleport_capture import OBSTeleportManager
+
+    HAS_TELEPORT = True
+    log_print("[Capture] OBS Teleport module loaded successfully from obs_teleport_capture.py")
+except ImportError as e:
+    HAS_TELEPORT = False
+    log_print(f"[Capture] OBS Teleport module import failed: {e}")
+    log_print("[Capture] Teleport mode will be unavailable.")
+
 # 鍢楄│灏庡叆 CaptureCard
 try:
     from .CaptureCard import create_capture_card_camera
@@ -112,16 +123,19 @@ except Exception as e:
 class CaptureService:
     """
     鎹曠嵅鏈嶅嫏绠＄悊鍣?
-    绲变竴绠＄悊 NDI銆乁DP銆丆aptureCard銆丆aptureCardGStreamer 鍜?MSS 浜旂ó鎹曠嵅鏂瑰紡锛屾彁渚涚当涓€鐨勬帴鍙ｃ€?
+    绲变竴绠＄悊 NDI銆乁DP銆丆aptureCard銆丆aptureCardGStreamer銆丮SS 鍜?Teleport 妯″紡锛屾彁渚涚当涓€鐨勬帴鍙ｃ€?
     """
     def __init__(self):
-        self.mode = "NDI" # "NDI", "UDP", "CaptureCard", "CaptureCardGStreamer", or "MSS"
+        self.mode = "NDI" # "NDI", "UDP", "Teleport", "CaptureCard", "CaptureCardGStreamer", or "MSS"
         
         # NDI
         self.ndi = NDIManager()
         
         # UDP
         self.udp_manager = OBS_UDP_Manager() if HAS_UDP else None
+
+        # Teleport
+        self.teleport_manager = OBSTeleportManager() if HAS_TELEPORT else None
         
         # CaptureCard (OpenCV)
         self.capture_card_camera = None
@@ -138,7 +152,7 @@ class CaptureService:
 
     def set_mode(self, mode):
         """鍒囨彌鎹曠嵅妯″紡"""
-        if mode not in ["NDI", "UDP", "CaptureCard", "CaptureCardGStreamer", "MSS"]:
+        if mode not in ["NDI", "UDP", "Teleport", "CaptureCard", "CaptureCardGStreamer", "MSS"]:
             return
         
         # 濡傛灉鍒囨彌妯″紡锛屽厛鏂烽枊鐣跺墠閫ｆ帴
@@ -176,6 +190,16 @@ class CaptureService:
                     return None, None
                 h, w = frame.shape[:2]
                 return w, h
+            except Exception:
+                return None, None
+        elif self.mode == "Teleport":
+            if not self.is_connected():
+                return None, None
+            try:
+                receiver = self.teleport_manager.get_receiver() if self.teleport_manager else None
+                if not receiver:
+                    return None, None
+                return receiver.get_frame_dimensions()
             except Exception:
                 return None, None
         elif self.mode == "CaptureCardGStreamer":
@@ -218,6 +242,63 @@ class CaptureService:
         except Exception as e:
             log_print(f"[Capture] UDP connection exception: {e}")
             return False, str(e)
+
+    def connect_teleport(self, host="", port=0, stream_key=""):
+        """閫ｆ帴 OBS Teleport 渚嗘簮"""
+        self.mode = "Teleport"
+
+        if not HAS_TELEPORT:
+            return False, "Teleport module not loaded"
+
+        if not self.teleport_manager:
+            return False, "Teleport manager not initialized"
+
+        try:
+            host_value = str(host).strip()
+            stream_key_value = str(stream_key).strip()
+            try:
+                port_value = int(port)
+            except Exception:
+                port_value = 0
+
+            # Discovery-only mode is allowed when stream key is selected.
+            if not stream_key_value and (not host_value or port_value <= 0):
+                return False, "Please select a discovered stream or provide Host/Port"
+
+            success = self.teleport_manager.connect(
+                host=host_value,
+                port=port_value,
+                stream_key=stream_key_value,
+            )
+            if success:
+                return True, None
+            return False, "Teleport connection failed"
+        except Exception as e:
+            log_print(f"[Capture] Teleport connection exception: {e}")
+            return False, str(e)
+
+    def ensure_teleport_discovery_running(self):
+        """Ensure Teleport discovery loop is running."""
+        if HAS_TELEPORT and self.teleport_manager:
+            self.teleport_manager.ensure_discovery_running()
+
+    def get_teleport_discovered_streams(self):
+        """Get Teleport discovered stream list for UI."""
+        if not HAS_TELEPORT or not self.teleport_manager:
+            return []
+        try:
+            return self.teleport_manager.get_discovered_streams()
+        except Exception:
+            return []
+
+    def get_teleport_connection_snapshot(self):
+        """Get Teleport connection snapshot for UI status."""
+        if not HAS_TELEPORT or not self.teleport_manager:
+            return {}
+        try:
+            return self.teleport_manager.get_connection_snapshot()
+        except Exception:
+            return {}
 
     def connect_capture_card(self, config):
         """Connect CaptureCard source (OpenCV or GStreamer based on mode)."""
@@ -386,6 +467,9 @@ class CaptureService:
         elif self.mode == "UDP":
             if self.udp_manager:
                 self.udp_manager.disconnect()
+        elif self.mode == "Teleport":
+            if self.teleport_manager:
+                self.teleport_manager.disconnect()
         elif self.mode == "CaptureCard":
             if self.capture_card_camera:
                 self.capture_card_camera.stop()
@@ -410,6 +494,13 @@ class CaptureService:
                 return self.udp_manager.is_stream_active()
             except:
                 return getattr(self.udp_manager, 'is_connected', False)
+        elif self.mode == "Teleport":
+            if not self.teleport_manager:
+                return False
+            try:
+                return self.teleport_manager.is_stream_active()
+            except Exception:
+                return False
         elif self.mode == "CaptureCard":
             if not self.capture_card_camera:
                 return False
@@ -542,6 +633,24 @@ class CaptureService:
             except Exception as e:
                 log_print(f"[Capture] UDP read frame error: {e}")
                 return None
+
+        elif self.mode == "Teleport":
+            if not self.teleport_manager:
+                return None
+
+            try:
+                receiver = self.teleport_manager.get_receiver()
+                if not receiver:
+                    return None
+                frame = receiver.get_current_frame()
+                if frame is None:
+                    return None
+                if frame.size == 0:
+                    return None
+                return frame
+            except Exception as e:
+                log_print(f"[Capture] Teleport read frame error: {e}")
+                return None
         
         elif self.mode == "CaptureCard":
             if not self.capture_card_camera:
@@ -642,6 +751,12 @@ class CaptureService:
                 self.capture_card_camera = None
         except Exception as e:
             log_print(f"[Capture] CaptureCard cleanup error (ignored): {e}")
+
+        try:
+            if self.teleport_manager:
+                self.teleport_manager.disconnect()
+        except Exception as e:
+            log_print(f"[Capture] Teleport cleanup error (ignored): {e}")
         
         try:
             if self.capture_card_gstreamer_camera:

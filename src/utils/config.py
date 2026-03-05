@@ -268,6 +268,9 @@ class Config:
         # --- Capture Settings ---
         self.udp_ip = "127.0.0.1"
         self.udp_port = "1234"
+        self.teleport_host = ""
+        self.teleport_port = "0"
+        self.teleport_stream_key = ""
         self.capture_mode = "NDI"
         self.last_ndi_source = None
         
@@ -568,6 +571,9 @@ class Config:
             # Capture Settings
             "udp_ip": self.udp_ip,
             "udp_port": self.udp_port,
+            "teleport_host": self.teleport_host,
+            "teleport_port": self.teleport_port,
+            "teleport_stream_key": self.teleport_stream_key,
             "capture_mode": self.capture_mode,
             "last_ndi_source": self.last_ndi_source,
             
@@ -628,6 +634,9 @@ class Config:
         self.serial_auto_switch_4m = bool(getattr(self, "serial_auto_switch_4m", False))
         self.serial_port = str(getattr(self, "serial_port", "")).strip()
         self.arduino_port = str(getattr(self, "arduino_port", "")).strip()
+        self.teleport_host = str(getattr(self, "teleport_host", "")).strip()
+        self.teleport_port = str(getattr(self, "teleport_port", "0")).strip() or "0"
+        self.teleport_stream_key = str(getattr(self, "teleport_stream_key", "")).strip()
         try:
             self.arduino_baud = int(getattr(self, "arduino_baud", 115200))
         except Exception:
