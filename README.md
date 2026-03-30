@@ -242,3 +242,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 - **Discord**: [Join our Discord server](https://discord.gg/pJ8JkSBnMB) for community support, discussions, and updates
 - **GitHub Issues**: For bug reports, questions, or feature requests, please open an issue on [GitHub](https://github.com/asenyeroao-ct/CVM-colorBot/issues)
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=asenyeroao-ct/CVM-colorBot&type=date&legend=top-left)](https://www.star-history.com/#asenyeroao-ct/CVM-colorBot&type=date&legend=top-left)
