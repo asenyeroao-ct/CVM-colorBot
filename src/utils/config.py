@@ -58,7 +58,7 @@ class Config:
         self.selected_2_tb = 2
         self.in_game_sens = 0.235
         self.mouse_dpi = 800
-        self.mouse_api = "Serial"  # Serial, Arduino, SendInput, Net, KmboxA, MakV2, DHZ
+        self.mouse_api = "Serial"  # Serial, Arduino, SendInput, Net, KmboxA, MakV2, MakcuController, DHZ
         self.auto_connect_mouse_api = False
         self.serial_auto_switch_4m = False
         self.serial_port_mode = "Auto"  # Auto, Manual
@@ -75,6 +75,8 @@ class Config:
         self.kmboxa_vid_pid = "0/0"
         self.makv2_port = ""
         self.makv2_baud = 4000000
+        self.makcu_controller_port = ""
+        self.makcu_controller_baud = 115200
         self.dhz_ip = "192.168.2.188"
         self.dhz_port = "5000"
         self.dhz_random = 0
@@ -395,6 +397,8 @@ class Config:
             "kmboxa_vid_pid": self.kmboxa_vid_pid,
             "makv2_port": self.makv2_port,
             "makv2_baud": self.makv2_baud,
+            "makcu_controller_port": self.makcu_controller_port,
+            "makcu_controller_baud": self.makcu_controller_baud,
             "dhz_ip": self.dhz_ip,
             "dhz_port": self.dhz_port,
             "dhz_random": self.dhz_random,
@@ -641,6 +645,11 @@ class Config:
             self.arduino_baud = int(getattr(self, "arduino_baud", 115200))
         except Exception:
             self.arduino_baud = 115200
+        self.makcu_controller_port = str(getattr(self, "makcu_controller_port", "")).strip()
+        try:
+            self.makcu_controller_baud = int(getattr(self, "makcu_controller_baud", 115200))
+        except Exception:
+            self.makcu_controller_baud = 115200
         self.arduino_16_bit_mouse = bool(getattr(self, "arduino_16_bit_mouse", True))
         self.ads_fov_enabled = bool(getattr(self, "ads_fov_enabled", False))
         self.ads_fov_enabled_sec = bool(getattr(self, "ads_fov_enabled_sec", False))

@@ -14,6 +14,9 @@ kmnet_module = None
 kmboxa_module = None
 makv2_module = None
 dhz_client = None
+makcu_controller_buttons = 0
+makcu_controller_lt = 0
+makcu_controller_rt = 0
 
 last_button_mask = 0
 listener_thread = None
@@ -39,8 +42,11 @@ def set_connected(connected: bool, backend: str = None):
 
 
 def reset_button_states():
-    global last_button_mask
+    global last_button_mask, makcu_controller_buttons, makcu_controller_lt, makcu_controller_rt
     with button_states_lock:
         for i in range(5):
             button_states[i] = False
     last_button_mask = 0
+    makcu_controller_buttons = 0
+    makcu_controller_lt = 0
+    makcu_controller_rt = 0

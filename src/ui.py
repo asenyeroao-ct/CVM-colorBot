@@ -296,6 +296,8 @@ class ViewerApp(ctk.CTk):
         self.saved_arduino_baud = str(getattr(config, "arduino_baud", 115200))
         self.saved_makv2_port = getattr(config, "makv2_port", "")
         self.saved_makv2_baud = str(getattr(config, "makv2_baud", 4000000))
+        self.saved_makcu_controller_port = str(getattr(config, "makcu_controller_port", ""))
+        self.saved_makcu_controller_baud = str(getattr(config, "makcu_controller_baud", 115200))
         self.saved_dhz_ip = getattr(config, "dhz_ip", "192.168.2.188")
         self.saved_dhz_port = str(getattr(config, "dhz_port", "5000"))
         self.saved_dhz_random = str(getattr(config, "dhz_random", 0))
@@ -802,7 +804,7 @@ class ViewerApp(ctk.CTk):
         self.mouse_api_option = self._add_option_row_in_frame(
             sec_hardware,
             "Input API",
-            ["Serial (Makcu)", "Arduino", "SendInput", "Net", "KmboxA", "MakV2", "MakV2Binary", "DHZ"],
+            ["Serial (Makcu)", "Arduino", "SendInput", "Net", "KmboxA", "MakV2", "MakcuController", "MakV2Binary", "DHZ"],
             self._on_mouse_api_changed,
         )
         self.var_auto_connect_mouse_api = tk.BooleanVar(value=bool(getattr(config, "auto_connect_mouse_api", False)))
@@ -824,6 +826,8 @@ class ViewerApp(ctk.CTk):
             current_mouse_api = "MakV2Binary"
         elif current_mouse_api_norm in ("makv2", "mak_v2", "mak-v2"):
             current_mouse_api = "MakV2"
+        elif current_mouse_api_norm in ("makcucontroller", "makcu_controller", "makcu-controller", "makcu controller"):
+            current_mouse_api = "MakcuController"
         elif current_mouse_api_norm == "arduino":
             current_mouse_api = "Arduino"
         elif current_mouse_api_norm in ("sendinput", "win32", "win32api", "win32_sendinput", "win32-sendinput"):
@@ -859,6 +863,12 @@ class ViewerApp(ctk.CTk):
         self.saved_arduino_baud = str(getattr(config, "arduino_baud", self.saved_arduino_baud))
         self.saved_makv2_port = getattr(config, "makv2_port", self.saved_makv2_port)
         self.saved_makv2_baud = str(getattr(config, "makv2_baud", self.saved_makv2_baud))
+        self.saved_makcu_controller_port = str(
+            getattr(config, "makcu_controller_port", self.saved_makcu_controller_port)
+        )
+        self.saved_makcu_controller_baud = str(
+            getattr(config, "makcu_controller_baud", self.saved_makcu_controller_baud)
+        )
         self.saved_dhz_ip = getattr(config, "dhz_ip", self.saved_dhz_ip)
         self.saved_dhz_port = str(getattr(config, "dhz_port", self.saved_dhz_port))
         self.saved_dhz_random = str(getattr(config, "dhz_random", self.saved_dhz_random))
@@ -1136,6 +1146,8 @@ class ViewerApp(ctk.CTk):
             mode = "DHZ"
         elif mode_norm in ("makv2", "mak_v2", "mak-v2"):
             mode = "MakV2"
+        elif mode_norm in ("makcucontroller", "makcu_controller", "makcu-controller", "makcu controller"):
+            mode = "MakcuController"
         elif mode_norm == "arduino":
             mode = "Arduino"
         elif mode_norm in ("sendinput", "win32", "win32api", "win32_sendinput", "win32-sendinput"):
@@ -1300,6 +1312,61 @@ class ViewerApp(ctk.CTk):
             btn_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
             self._add_text_button(btn_frame, "CONNECT MAKV2", lambda: self._connect_mouse_api("MakV2")).pack(side="left")
+            self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            return
+
+        if mode == "MakcuController":
+            tip = ctk.CTkLabel(
+                self.hardware_content_frame,
+                text="MakcuController API (serial ctl.stick / ctl.clear / ctl.state)",
+                font=("Roboto", 10),
+                text_color=COLOR_TEXT_DIM,
+            )
+            tip.pack(anchor="w", pady=(0, 8))
+
+            notice = ctk.CTkLabel(
+                self.hardware_content_frame,
+                text="Movement uses controller stick output; click and keyboard output use local SendInput fallback.",
+                font=("Roboto", 9),
+                text_color=COLOR_TEXT_DIM,
+            )
+            notice.pack(anchor="w", pady=(0, 8))
+
+            port_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            port_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(port_frame, text="Port (optional)", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.makcu_controller_port_entry = ctk.CTkEntry(
+                port_frame,
+                fg_color=COLOR_SURFACE,
+                border_width=0,
+                text_color=COLOR_TEXT,
+                width=170,
+            )
+            self.makcu_controller_port_entry.pack(side="right")
+            self.makcu_controller_port_entry.insert(0, self.saved_makcu_controller_port)
+            self.makcu_controller_port_entry.bind("<KeyRelease>", self._on_makcu_controller_port_changed)
+            self.makcu_controller_port_entry.bind("<FocusOut>", self._on_makcu_controller_port_changed)
+
+            baud_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            baud_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(baud_frame, text="Baud", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.makcu_controller_baud_entry = ctk.CTkEntry(
+                baud_frame,
+                fg_color=COLOR_SURFACE,
+                border_width=0,
+                text_color=COLOR_TEXT,
+                width=170,
+            )
+            self.makcu_controller_baud_entry.pack(side="right")
+            self.makcu_controller_baud_entry.insert(0, self.saved_makcu_controller_baud)
+            self.makcu_controller_baud_entry.bind("<KeyRelease>", self._on_makcu_controller_baud_changed)
+            self.makcu_controller_baud_entry.bind("<FocusOut>", self._on_makcu_controller_baud_changed)
+
+            btn_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            btn_frame.pack(fill="x", pady=8)
+            self._add_text_button(
+                btn_frame, "CONNECT MAKCU CONTROLLER", lambda: self._connect_mouse_api("MakcuController")
+            ).pack(side="left")
             self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
             return
 
@@ -1482,6 +1549,8 @@ class ViewerApp(ctk.CTk):
             self.saved_mouse_api = "MakV2Binary"
         elif mode_norm in ("makv2", "mak_v2", "mak-v2"):
             self.saved_mouse_api = "MakV2"
+        elif mode_norm in ("makcucontroller", "makcu_controller", "makcu-controller", "makcu controller"):
+            self.saved_mouse_api = "MakcuController"
         elif mode_norm == "arduino":
             self.saved_mouse_api = "Arduino"
         elif mode_norm in ("sendinput", "win32", "win32api", "win32_sendinput", "win32-sendinput"):
@@ -1599,6 +1668,21 @@ class ViewerApp(ctk.CTk):
             except ValueError:
                 pass
 
+    def _on_makcu_controller_port_changed(self, event=None):
+        if hasattr(self, "makcu_controller_port_entry") and self.makcu_controller_port_entry.winfo_exists():
+            val = self.makcu_controller_port_entry.get().strip()
+            self.saved_makcu_controller_port = val
+            config.makcu_controller_port = val
+
+    def _on_makcu_controller_baud_changed(self, event=None):
+        if hasattr(self, "makcu_controller_baud_entry") and self.makcu_controller_baud_entry.winfo_exists():
+            val = self.makcu_controller_baud_entry.get().strip()
+            self.saved_makcu_controller_baud = val
+            try:
+                config.makcu_controller_baud = int(val)
+            except ValueError:
+                pass
+
     def _on_dhz_ip_changed(self, event=None):
         if hasattr(self, "dhz_ip_entry") and self.dhz_ip_entry.winfo_exists():
             val = self.dhz_ip_entry.get().strip()
@@ -1701,6 +1785,8 @@ class ViewerApp(ctk.CTk):
             mode = "DHZ"
         elif mode_norm in ("makv2", "mak_v2", "mak-v2"):
             mode = "MakV2"
+        elif mode_norm in ("makcucontroller", "makcu_controller", "makcu-controller", "makcu controller"):
+            mode = "MakcuController"
         elif mode_norm == "arduino":
             mode = "Arduino"
         elif mode_norm in ("sendinput", "win32", "win32api", "win32_sendinput", "win32-sendinput"):
@@ -1784,6 +1870,21 @@ class ViewerApp(ctk.CTk):
                 "makv2_port": self.saved_makv2_port,
                 "makv2_baud": config.makv2_baud,
             })
+        elif mode == "MakcuController":
+            if hasattr(self, "makcu_controller_port_entry") and self.makcu_controller_port_entry.winfo_exists():
+                self.saved_makcu_controller_port = self.makcu_controller_port_entry.get().strip()
+            if hasattr(self, "makcu_controller_baud_entry") and self.makcu_controller_baud_entry.winfo_exists():
+                self.saved_makcu_controller_baud = self.makcu_controller_baud_entry.get().strip()
+
+            config.makcu_controller_port = self.saved_makcu_controller_port
+            try:
+                config.makcu_controller_baud = int(self.saved_makcu_controller_baud)
+            except ValueError:
+                config.makcu_controller_baud = 115200
+            payload.update({
+                "makcu_controller_port": self.saved_makcu_controller_port,
+                "makcu_controller_baud": config.makcu_controller_baud,
+            })
         elif mode == "DHZ":
             if hasattr(self, "dhz_ip_entry") and self.dhz_ip_entry.winfo_exists():
                 self.saved_dhz_ip = self.dhz_ip_entry.get().strip()
@@ -1862,6 +1963,12 @@ class ViewerApp(ctk.CTk):
                     makv2_port=payload.get("makv2_port", ""),
                     makv2_baud=payload.get("makv2_baud", 4000000),
                 )
+            elif mode == "MakcuController":
+                success, error = switch_backend(
+                    "MakcuController",
+                    makcu_controller_port=payload.get("makcu_controller_port", ""),
+                    makcu_controller_baud=payload.get("makcu_controller_baud", 115200),
+                )
             elif mode == "DHZ":
                 success, error = switch_backend(
                     "DHZ",
@@ -1903,6 +2010,8 @@ class ViewerApp(ctk.CTk):
                 self._set_status_indicator("Status: Mouse API connected (SendInput)", COLOR_TEXT)
             elif mode == "MakV2":
                 self._set_status_indicator("Status: Mouse API connected (MakV2)", COLOR_TEXT)
+            elif mode == "MakcuController":
+                self._set_status_indicator("Status: Mouse API connected (MakcuController)", COLOR_TEXT)
             elif mode == "DHZ":
                 self._set_status_indicator("Status: Mouse API connected (DHZ)", COLOR_TEXT)
             else:
@@ -6474,6 +6583,8 @@ class ViewerApp(ctk.CTk):
             return "MakV2Binary"
         if mode_norm in ("makv2", "mak_v2", "mak-v2"):
             return "MakV2"
+        if mode_norm in ("makcucontroller", "makcu_controller", "makcu-controller", "makcu controller"):
+            return "MakcuController"
         if mode_norm == "arduino":
             return "Arduino"
         if mode_norm in ("sendinput", "win32", "win32api", "win32_sendinput", "win32-sendinput"):
@@ -6490,7 +6601,7 @@ class ViewerApp(ctk.CTk):
             return bool(mouse_backend.supports_trigger_strafe_ui(selected_mode))
         except Exception:
             normalized = self._normalize_mouse_api_name(selected_mode)
-            return normalized in {"SendInput", "Net", "KmboxA", "DHZ", "Ferrum"}
+            return normalized in {"SendInput", "Net", "KmboxA", "DHZ", "Ferrum", "MakcuController"}
 
     def _supports_keyboard_state(self, mode=None) -> bool:
         selected_mode = mode if mode is not None else getattr(config, "mouse_api", "Serial")
@@ -6500,7 +6611,7 @@ class ViewerApp(ctk.CTk):
             return bool(mouse_backend.supports_keyboard_state(selected_mode))
         except Exception:
             normalized = self._normalize_mouse_api_name(selected_mode)
-            return normalized in {"SendInput", "Net", "KmboxA", "DHZ"}
+            return normalized in {"SendInput", "Net", "KmboxA", "DHZ", "MakcuController"}
 
     def _toggle_hardware_info_details(self):
         self._hardware_info_expanded = not bool(getattr(self, "_hardware_info_expanded", False))
@@ -6587,6 +6698,24 @@ class ViewerApp(ctk.CTk):
                 if serial_dev is not None:
                     details.append(f"Active Port: {getattr(serial_dev, 'port', cfg_port)}")
                     details.append(f"Active Baud: {getattr(serial_dev, 'baudrate', cfg_baud)}")
+            except Exception:
+                pass
+        elif mode == "MakcuController":
+            cfg_port = str(getattr(config, "makcu_controller_port", "") or "auto")
+            cfg_baud = str(getattr(config, "makcu_controller_baud", 115200))
+            details.append(f"Port: {cfg_port}")
+            details.append(f"Baud: {cfg_baud}")
+            details.append("Movement Output: Serial ctl.stick")
+            details.append("Click/Keyboard Output: Local SendInput fallback")
+            try:
+                serial_dev = getattr(mouse_state, "makcu", None)
+                if serial_dev is not None:
+                    details.append(f"Active Port: {getattr(serial_dev, 'port', cfg_port)}")
+                    details.append(f"Active Baud: {getattr(serial_dev, 'baudrate', cfg_baud)}")
+                buttons = int(getattr(mouse_state, "makcu_controller_buttons", 0))
+                lt = int(getattr(mouse_state, "makcu_controller_lt", 0))
+                rt = int(getattr(mouse_state, "makcu_controller_rt", 0))
+                details.append(f"Controller State: buttons={buttons}, lt={lt}, rt={rt}")
             except Exception:
                 pass
         elif mode == "Arduino":

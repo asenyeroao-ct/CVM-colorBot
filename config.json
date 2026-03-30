@@ -58,6 +58,8 @@
     "kmboxa_vid_pid": "0/0",
     "makv2_port": "",
     "makv2_baud": 4000000,
+    "makcu_controller_port": "",
+    "makcu_controller_baud": 115200,
     "dhz_ip": "192.168.2.188",
     "dhz_port": "5000",
     "dhz_random": 0,

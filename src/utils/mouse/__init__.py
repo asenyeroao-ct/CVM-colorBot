@@ -1,7 +1,19 @@
 import re
 from src.utils.debug_logger import log_click, log_press, log_release, log_print
 
-from . import ArduinoAPI, DHZAPI, FerrumAPI, KmboxAAPI, MakV2, MakV2Binary, NetAPI, SendInputAPI, SerialAPI, state
+from . import (
+    ArduinoAPI,
+    DHZAPI,
+    FerrumAPI,
+    KmboxAAPI,
+    MakV2,
+    MakV2Binary,
+    MakcuControllerAPI,
+    NetAPI,
+    SendInputAPI,
+    SerialAPI,
+    state,
+)
 
 is_connected = False
 
@@ -23,6 +35,8 @@ def _normalize_api_name(mode: str) -> str:
         return "MakV2Binary"
     if mode_norm in ("makv2", "mak_v2", "mak-v2"):
         return "MakV2"
+    if mode_norm in ("makcucontroller", "makcu_controller", "makcu-controller", "makcu controller"):
+        return "MakcuController"
     if mode_norm == "arduino":
         return "Arduino"
     if mode_norm in ("sendinput", "win32", "win32api", "win32_sendinput", "win32-sendinput"):
@@ -68,6 +82,11 @@ _BACKEND_CAPABILITIES = {
         "keyboard_output": True,
         "keyboard_state": False,
         "trigger_strafe_ui": False,
+    },
+    "MakcuController": {
+        "keyboard_output": True,
+        "keyboard_state": True,
+        "trigger_strafe_ui": True,
     },
     "MakV2Binary": {
         "keyboard_output": True,
@@ -159,6 +178,21 @@ def _get_makv2_settings(port=None, baud=None):
 
         cfg_port = str(getattr(config, "makv2_port", cfg_port))
         cfg_baud = int(getattr(config, "makv2_baud", cfg_baud))
+    except Exception:
+        pass
+
+    selected_port = str(port if port is not None else cfg_port).strip()
+    selected_baud = int(baud if baud is not None else cfg_baud)
+    return selected_port, selected_baud
+
+
+def _get_makcu_controller_settings(port=None, baud=None):
+    cfg_port, cfg_baud = "", 115200
+    try:
+        from src.utils.config import config
+
+        cfg_port = str(getattr(config, "makcu_controller_port", cfg_port))
+        cfg_baud = int(getattr(config, "makcu_controller_baud", cfg_baud))
     except Exception:
         pass
 
@@ -330,6 +364,7 @@ def _disconnect_all_backends():
     DHZAPI.disconnect()
     FerrumAPI.disconnect()
     MakV2.disconnect()
+    MakcuControllerAPI.disconnect()
     MakV2Binary.disconnect()
 
 
@@ -390,6 +425,13 @@ def connect_to_makv2(port=None, baud=None) -> bool:
     return ok
 
 
+def connect_to_makcu_controller(port=None, baud=None) -> bool:
+    port, baud = _get_makcu_controller_settings(port=port, baud=baud)
+    ok = MakcuControllerAPI.connect(port=port if port else None, baud=baud)
+    _sync_public_state()
+    return ok
+
+
 def connect_to_makv2binary(port=None, baud=None) -> bool:
     port, baud = _get_makv2binary_settings(port=port, baud=baud)
     ok = MakV2Binary.connect(port=port if port else None, baud=baud)
@@ -443,6 +485,8 @@ def connect_to_makcu():
         return connect_to_makv2binary()
     if mode == "MakV2":
         return connect_to_makv2()
+    if mode == "MakcuController":
+        return connect_to_makcu_controller()
     if mode == "Arduino":
         return connect_to_arduino()
     if mode == "SendInput":
@@ -467,6 +511,8 @@ def switch_backend(
     kmboxa_vid_pid=None,
     makv2_port=None,
     makv2_baud=None,
+    makcu_controller_port=None,
+    makcu_controller_baud=None,
     makv2binary_port=None,
     makv2binary_baud=None,
     dhz_ip=None,
@@ -525,6 +571,10 @@ def switch_backend(
             config.makv2_port = str(makv2_port)
         if makv2_baud is not None:
             config.makv2_baud = int(makv2_baud)
+        if makcu_controller_port is not None:
+            config.makcu_controller_port = str(makcu_controller_port)
+        if makcu_controller_baud is not None:
+            config.makcu_controller_baud = int(makcu_controller_baud)
         if makv2binary_port is not None:
             config.makv2binary_port = str(makv2binary_port)
         if makv2binary_baud is not None:
@@ -565,6 +615,10 @@ def switch_backend(
         ok = connect_to_makv2(port=makv2_port, baud=makv2_baud)
         return ok, (None if ok else (state.last_connect_error or "MakV2 backend connect failed"))
 
+    if target_mode == "MakcuController":
+        ok = connect_to_makcu_controller(port=makcu_controller_port, baud=makcu_controller_baud)
+        return ok, (None if ok else (state.last_connect_error or "MakcuController backend connect failed"))
+
     if target_mode == "DHZ":
         ok = connect_to_dhz(ip=dhz_ip, port=dhz_port, random_shift=dhz_random)
         return ok, (None if ok else (state.last_connect_error or "DHZ backend connect failed"))
@@ -604,6 +658,8 @@ def is_button_pressed(idx: int) -> bool:
         return MakV2Binary.is_button_pressed(idx)
     if state.active_backend == "MakV2":
         return MakV2.is_button_pressed(idx)
+    if state.active_backend == "MakcuController":
+        return MakcuControllerAPI.is_button_pressed(idx)
     if state.active_backend == "Arduino":
         return ArduinoAPI.is_button_pressed(idx)
     if state.active_backend == "SendInput":
@@ -628,6 +684,8 @@ def is_key_pressed(key) -> bool:
         return MakV2Binary.is_key_pressed(key)
     if state.active_backend == "MakV2":
         return MakV2.is_key_pressed(key)
+    if state.active_backend == "MakcuController":
+        return MakcuControllerAPI.is_key_pressed(key)
     if state.active_backend == "Arduino":
         return ArduinoAPI.is_key_pressed(key)
     if state.active_backend == "SendInput":
@@ -652,6 +710,8 @@ def key_down(key):
         MakV2Binary.key_down(key)
     elif state.active_backend == "MakV2":
         MakV2.key_down(key)
+    elif state.active_backend == "MakcuController":
+        MakcuControllerAPI.key_down(key)
     elif state.active_backend == "Arduino":
         ArduinoAPI.key_down(key)
     elif state.active_backend == "SendInput":
@@ -677,6 +737,8 @@ def key_up(key):
         MakV2Binary.key_up(key)
     elif state.active_backend == "MakV2":
         MakV2.key_up(key)
+    elif state.active_backend == "MakcuController":
+        MakcuControllerAPI.key_up(key)
     elif state.active_backend == "Arduino":
         ArduinoAPI.key_up(key)
     elif state.active_backend == "SendInput":
@@ -702,6 +764,8 @@ def key_press(key):
         MakV2Binary.key_press(key)
     elif state.active_backend == "MakV2":
         MakV2.key_press(key)
+    elif state.active_backend == "MakcuController":
+        MakcuControllerAPI.key_press(key)
     elif state.active_backend == "Arduino":
         ArduinoAPI.key_press(key)
     elif state.active_backend == "SendInput":
@@ -768,6 +832,8 @@ def test_move():
         MakV2Binary.move(100, 100)
     elif state.active_backend == "MakV2":
         MakV2.move(100, 100)
+    elif state.active_backend == "MakcuController":
+        MakcuControllerAPI.test_move()
     elif state.active_backend == "Arduino":
         ArduinoAPI.move(100, 100)
     elif state.active_backend == "SendInput":
@@ -905,6 +971,8 @@ class Mouse:
             MakV2Binary.move(x, y)
         elif state.active_backend == "MakV2":
             MakV2.move(x, y)
+        elif state.active_backend == "MakcuController":
+            MakcuControllerAPI.move(x, y)
         elif state.active_backend == "Arduino":
             ArduinoAPI.move(x, y)
         elif state.active_backend == "SendInput":
@@ -927,6 +995,8 @@ class Mouse:
             MakV2Binary.move_bezier(x, y, segments, ctrl_x, ctrl_y)
         elif state.active_backend == "MakV2":
             MakV2.move_bezier(x, y, segments, ctrl_x, ctrl_y)
+        elif state.active_backend == "MakcuController":
+            MakcuControllerAPI.move_bezier(x, y, segments, ctrl_x, ctrl_y)
         elif state.active_backend == "Arduino":
             ArduinoAPI.move_bezier(x, y, segments, ctrl_x, ctrl_y)
         elif state.active_backend == "SendInput":
@@ -954,6 +1024,9 @@ class Mouse:
         elif state.active_backend == "MakV2":
             MakV2.left(1)
             MakV2.left(0)
+        elif state.active_backend == "MakcuController":
+            MakcuControllerAPI.left(1)
+            MakcuControllerAPI.left(0)
         elif state.active_backend == "Arduino":
             ArduinoAPI.left(1)
             ArduinoAPI.left(0)
@@ -981,6 +1054,8 @@ class Mouse:
             MakV2Binary.left(1)
         elif state.active_backend == "MakV2":
             MakV2.left(1)
+        elif state.active_backend == "MakcuController":
+            MakcuControllerAPI.left(1)
         elif state.active_backend == "Arduino":
             ArduinoAPI.left(1)
         elif state.active_backend == "SendInput":
@@ -1004,6 +1079,8 @@ class Mouse:
             MakV2Binary.left(0)
         elif state.active_backend == "MakV2":
             MakV2.left(0)
+        elif state.active_backend == "MakcuController":
+            MakcuControllerAPI.left(0)
         elif state.active_backend == "Arduino":
             ArduinoAPI.left(0)
         elif state.active_backend == "SendInput":
