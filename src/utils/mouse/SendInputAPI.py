@@ -179,5 +179,42 @@ def key_press(key):
     _send_keyboard(vk_code=vk, key_up=True)
 
 
+def local_is_key_pressed(key) -> bool:
+    """Local keyboard state query, 鐙珛浜巃ctive backend."""
+    vk = to_vk_code(key)
+    if vk is None:
+        return False
+    try:
+        return bool(_USER32.GetAsyncKeyState(int(vk)) & 0x8000)
+    except Exception:
+        return False
+
+
+def local_key_down(key):
+    """Local keyboard down, 涓嶄緷璧?state.active_backend."""
+    vk = to_vk_code(key)
+    if vk is None:
+        return
+    key_input = KEYBDINPUT(wVk=int(vk), wScan=0, dwFlags=0, time=0, dwExtraInfo=0)
+    packet = INPUT(type=INPUT_KEYBOARD, ki=key_input)
+    _USER32.SendInput(1, ctypes.byref(packet), ctypes.sizeof(INPUT))
+
+
+def local_key_up(key):
+    """Local keyboard up, 涓嶄緷璧?state.active_backend."""
+    vk = to_vk_code(key)
+    if vk is None:
+        return
+    key_input = KEYBDINPUT(wVk=int(vk), wScan=0, dwFlags=KEYEVENTF_KEYUP, time=0, dwExtraInfo=0)
+    packet = INPUT(type=INPUT_KEYBOARD, ki=key_input)
+    _USER32.SendInput(1, ctypes.byref(packet), ctypes.sizeof(INPUT))
+
+
+def local_key_press(key):
+    """Local keyboard click, 鐙珛 keyboard API 浣跨敤."""
+    local_key_down(key)
+    local_key_up(key)
+
+
 def test_move():
     move(100, 100)

@@ -1,5 +1,5 @@
 {
-    "version": "2.8.2",
+    "version": "2.9.0",
     "release_date": "2026-03-30",
-    "changelog": "Added MakcuController serial hardware API integration with General tab configuration and backend routing."
+    "changelog": "Added Win32-backed keybind capture improvements and configurable RCS binding across aimbot, trigger, and recoil workflows."
 }

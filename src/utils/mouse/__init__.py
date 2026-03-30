@@ -6,6 +6,7 @@ from . import (
     DHZAPI,
     FerrumAPI,
     KmboxAAPI,
+    MakxdMakAPI,
     MakV2,
     MakV2Binary,
     MakcuControllerAPI,
@@ -33,6 +34,8 @@ def _normalize_api_name(mode: str) -> str:
         return "DHZ"
     if mode_norm in ("makv2binary", "makv2_binary", "makv2-binary", "binary"):
         return "MakV2Binary"
+    if mode_norm in ("makxdmakapi", "makxd_makapi", "makxd-makapi", "makxd makapi", "makxd_mak", "makxd-mak"):
+        return "MakxdMakAPI"
     if mode_norm in ("makv2", "mak_v2", "mak-v2"):
         return "MakV2"
     if mode_norm in ("makcucontroller", "makcu_controller", "makcu-controller", "makcu controller"):
@@ -44,6 +47,14 @@ def _normalize_api_name(mode: str) -> str:
     if mode_norm == "ferrum":
         return "Ferrum"
     return "Serial"
+
+
+def _normalize_keyboard_api_name(mode: str) -> str:
+    raw = str(mode or "").strip()
+    lowered = raw.lower()
+    if lowered in {"", "follow", "follow mouse api", "follow_mouse_api", "follow-mouse-api"}:
+        return "Follow Mouse API"
+    return _normalize_api_name(raw)
 
 
 _DEFAULT_BACKEND_CAPABILITIES = {
@@ -93,6 +104,11 @@ _BACKEND_CAPABILITIES = {
         "keyboard_state": False,
         "trigger_strafe_ui": False,
     },
+    "MakxdMakAPI": {
+        "keyboard_output": True,
+        "keyboard_state": False,
+        "trigger_strafe_ui": False,
+    },
     "DHZ": {
         "keyboard_output": True,
         "keyboard_state": True,
@@ -115,11 +131,13 @@ def get_backend_capabilities(mode: str = None) -> dict:
 
 
 def supports_keyboard_output(mode: str = None) -> bool:
-    return bool(get_backend_capabilities(mode).get("keyboard_output", False))
+    selected = _resolve_keyboard_backend(mode)
+    return bool(get_backend_capabilities(selected).get("keyboard_output", False))
 
 
 def supports_keyboard_state(mode: str = None) -> bool:
-    return bool(get_backend_capabilities(mode).get("keyboard_state", False))
+    selected = _resolve_keyboard_backend(mode)
+    return bool(get_backend_capabilities(selected).get("keyboard_state", False))
 
 
 def supports_trigger_strafe_ui(mode: str = None) -> bool:
@@ -133,6 +151,22 @@ def _get_selected_backend_from_config() -> str:
         return _normalize_api_name(getattr(config, "mouse_api", "Serial"))
     except Exception:
         return "Serial"
+
+
+def _resolve_keyboard_backend(mode: str = None) -> str:
+    if mode is not None:
+        normalized = _normalize_keyboard_api_name(mode)
+        if normalized != "Follow Mouse API":
+            return normalized
+    try:
+        from src.utils.config import config
+
+        configured = _normalize_keyboard_api_name(getattr(config, "keyboard_api", "Follow Mouse API"))
+        if configured != "Follow Mouse API":
+            return configured
+    except Exception:
+        pass
+    return _get_selected_backend_from_config()
 
 
 def _get_serial_settings(mode=None, port=None):
@@ -323,6 +357,21 @@ def _get_dhz_settings(ip=None, port=None, random_shift=None):
     return selected_ip, selected_port, selected_random
 
 
+def _get_makxd_mak_settings(port=None, baud=None):
+    cfg_port, cfg_baud = "", 115_200
+    try:
+        from src.utils.config import config
+
+        cfg_port = str(getattr(config, "makxd_mak_port", cfg_port))
+        cfg_baud = int(getattr(config, "makxd_mak_baud", cfg_baud))
+    except Exception:
+        pass
+
+    selected_port = str(port if port is not None else cfg_port).strip()
+    selected_baud = int(baud if baud is not None else cfg_baud)
+    return selected_port, selected_baud
+
+
 def _get_arduino_settings(port=None, baud=None):
     cfg_port, cfg_baud = "", 115200
     try:
@@ -366,6 +415,7 @@ def _disconnect_all_backends():
     MakV2.disconnect()
     MakcuControllerAPI.disconnect()
     MakV2Binary.disconnect()
+    MakxdMakAPI.disconnect()
 
 
 def disconnect_all(selected_mode: str = None):
@@ -439,6 +489,13 @@ def connect_to_makv2binary(port=None, baud=None) -> bool:
     return ok
 
 
+def connect_to_makxd_mak(port=None, baud=None) -> bool:
+    port, baud = _get_makxd_mak_settings(port=port, baud=baud)
+    ok = MakxdMakAPI.connect(port=port if port else None, baud=baud)
+    _sync_public_state()
+    return ok
+
+
 def connect_to_dhz(ip=None, port=None, random_shift=None) -> bool:
     ip, port, random_shift = _get_dhz_settings(ip=ip, port=port, random_shift=random_shift)
     ok = DHZAPI.connect(ip=ip, port=port, random_shift=random_shift)
@@ -483,6 +540,8 @@ def connect_to_makcu():
         return connect_to_dhz()
     if mode == "MakV2Binary":
         return connect_to_makv2binary()
+    if mode == "MakxdMakAPI":
+        return connect_to_makxd_mak()
     if mode == "MakV2":
         return connect_to_makv2()
     if mode == "MakcuController":
@@ -515,6 +574,8 @@ def switch_backend(
     makcu_controller_baud=None,
     makv2binary_port=None,
     makv2binary_baud=None,
+    makxd_mak_port=None,
+    makxd_mak_baud=None,
     dhz_ip=None,
     dhz_port=None,
     dhz_random=None,
@@ -579,6 +640,10 @@ def switch_backend(
             config.makv2binary_port = str(makv2binary_port)
         if makv2binary_baud is not None:
             config.makv2binary_baud = int(makv2binary_baud)
+        if makxd_mak_port is not None:
+            config.makxd_mak_port = str(makxd_mak_port)
+        if makxd_mak_baud is not None:
+            config.makxd_mak_baud = int(makxd_mak_baud)
         if dhz_ip is not None:
             config.dhz_ip = str(dhz_ip)
         if dhz_port is not None:
@@ -610,6 +675,10 @@ def switch_backend(
     if target_mode == "MakV2Binary":
         ok = connect_to_makv2binary(port=makv2binary_port, baud=makv2binary_baud)
         return ok, (None if ok else (state.last_connect_error or "MakV2Binary backend connect failed"))
+
+    if target_mode == "MakxdMakAPI":
+        ok = connect_to_makxd_mak(port=makxd_mak_port, baud=makxd_mak_baud)
+        return ok, (None if ok else (state.last_connect_error or "MakxdMakAPI backend connect failed"))
 
     if target_mode == "MakV2":
         ok = connect_to_makv2(port=makv2_port, baud=makv2_baud)
@@ -656,6 +725,8 @@ def is_button_pressed(idx: int) -> bool:
         return DHZAPI.is_button_pressed(idx)
     if state.active_backend == "MakV2Binary":
         return MakV2Binary.is_button_pressed(idx)
+    if state.active_backend == "MakxdMakAPI":
+        return MakxdMakAPI.is_button_pressed(idx)
     if state.active_backend == "MakV2":
         return MakV2.is_button_pressed(idx)
     if state.active_backend == "MakcuController":
@@ -670,107 +741,126 @@ def is_button_pressed(idx: int) -> bool:
 
 
 def is_key_pressed(key) -> bool:
+    keyboard_backend = _resolve_keyboard_backend()
+    if keyboard_backend == "SendInput":
+        return SendInputAPI.local_is_key_pressed(key)
+
     if not state.is_connected:
         _sync_public_state()
         return False
 
-    if state.active_backend == "Net":
+    if keyboard_backend == "Net":
         return NetAPI.is_key_pressed(key)
-    if state.active_backend == "KmboxA":
+    if keyboard_backend == "KmboxA":
         return KmboxAAPI.is_key_pressed(key)
-    if state.active_backend == "DHZ":
+    if keyboard_backend == "DHZ":
         return DHZAPI.is_key_pressed(key)
-    if state.active_backend == "MakV2Binary":
+    if keyboard_backend == "MakV2Binary":
         return MakV2Binary.is_key_pressed(key)
-    if state.active_backend == "MakV2":
+    if keyboard_backend == "MakxdMakAPI":
+        return MakxdMakAPI.is_key_pressed(key)
+    if keyboard_backend == "MakV2":
         return MakV2.is_key_pressed(key)
-    if state.active_backend == "MakcuController":
+    if keyboard_backend == "MakcuController":
         return MakcuControllerAPI.is_key_pressed(key)
-    if state.active_backend == "Arduino":
+    if keyboard_backend == "Arduino":
         return ArduinoAPI.is_key_pressed(key)
-    if state.active_backend == "SendInput":
-        return SendInputAPI.is_key_pressed(key)
-    if state.active_backend == "Ferrum":
+    if keyboard_backend == "Ferrum":
         return FerrumAPI.is_key_pressed(key)
     return SerialAPI.is_key_pressed(key)
 
 
 def key_down(key):
+    keyboard_backend = _resolve_keyboard_backend()
+    if keyboard_backend == "SendInput":
+        SendInputAPI.local_key_down(key)
+        return
+
     if not state.is_connected:
         _sync_public_state()
         return
 
-    if state.active_backend == "Net":
+    if keyboard_backend == "Net":
         NetAPI.key_down(key)
-    elif state.active_backend == "KmboxA":
+    elif keyboard_backend == "KmboxA":
         KmboxAAPI.key_down(key)
-    elif state.active_backend == "DHZ":
+    elif keyboard_backend == "DHZ":
         DHZAPI.key_down(key)
-    elif state.active_backend == "MakV2Binary":
+    elif keyboard_backend == "MakV2Binary":
         MakV2Binary.key_down(key)
-    elif state.active_backend == "MakV2":
+    elif keyboard_backend == "MakxdMakAPI":
+        MakxdMakAPI.key_down(key)
+    elif keyboard_backend == "MakV2":
         MakV2.key_down(key)
-    elif state.active_backend == "MakcuController":
+    elif keyboard_backend == "MakcuController":
         MakcuControllerAPI.key_down(key)
-    elif state.active_backend == "Arduino":
+    elif keyboard_backend == "Arduino":
         ArduinoAPI.key_down(key)
-    elif state.active_backend == "SendInput":
-        SendInputAPI.key_down(key)
-    elif state.active_backend == "Ferrum":
+    elif keyboard_backend == "Ferrum":
         FerrumAPI.key_down(key)
     else:
         SerialAPI.key_down(key)
 
 
 def key_up(key):
+    keyboard_backend = _resolve_keyboard_backend()
+    if keyboard_backend == "SendInput":
+        SendInputAPI.local_key_up(key)
+        return
+
     if not state.is_connected:
         _sync_public_state()
         return
 
-    if state.active_backend == "Net":
+    if keyboard_backend == "Net":
         NetAPI.key_up(key)
-    elif state.active_backend == "KmboxA":
+    elif keyboard_backend == "KmboxA":
         KmboxAAPI.key_up(key)
-    elif state.active_backend == "DHZ":
+    elif keyboard_backend == "DHZ":
         DHZAPI.key_up(key)
-    elif state.active_backend == "MakV2Binary":
+    elif keyboard_backend == "MakV2Binary":
         MakV2Binary.key_up(key)
-    elif state.active_backend == "MakV2":
+    elif keyboard_backend == "MakxdMakAPI":
+        MakxdMakAPI.key_up(key)
+    elif keyboard_backend == "MakV2":
         MakV2.key_up(key)
-    elif state.active_backend == "MakcuController":
+    elif keyboard_backend == "MakcuController":
         MakcuControllerAPI.key_up(key)
-    elif state.active_backend == "Arduino":
+    elif keyboard_backend == "Arduino":
         ArduinoAPI.key_up(key)
-    elif state.active_backend == "SendInput":
-        SendInputAPI.key_up(key)
-    elif state.active_backend == "Ferrum":
+    elif keyboard_backend == "Ferrum":
         FerrumAPI.key_up(key)
     else:
         SerialAPI.key_up(key)
 
 
 def key_press(key):
+    keyboard_backend = _resolve_keyboard_backend()
+    if keyboard_backend == "SendInput":
+        SendInputAPI.local_key_press(key)
+        return
+
     if not state.is_connected:
         _sync_public_state()
         return
 
-    if state.active_backend == "Net":
+    if keyboard_backend == "Net":
         NetAPI.key_press(key)
-    elif state.active_backend == "KmboxA":
+    elif keyboard_backend == "KmboxA":
         KmboxAAPI.key_press(key)
-    elif state.active_backend == "DHZ":
+    elif keyboard_backend == "DHZ":
         DHZAPI.key_press(key)
-    elif state.active_backend == "MakV2Binary":
+    elif keyboard_backend == "MakV2Binary":
         MakV2Binary.key_press(key)
-    elif state.active_backend == "MakV2":
+    elif keyboard_backend == "MakxdMakAPI":
+        MakxdMakAPI.key_press(key)
+    elif keyboard_backend == "MakV2":
         MakV2.key_press(key)
-    elif state.active_backend == "MakcuController":
+    elif keyboard_backend == "MakcuController":
         MakcuControllerAPI.key_press(key)
-    elif state.active_backend == "Arduino":
+    elif keyboard_backend == "Arduino":
         ArduinoAPI.key_press(key)
-    elif state.active_backend == "SendInput":
-        SendInputAPI.key_press(key)
-    elif state.active_backend == "Ferrum":
+    elif keyboard_backend == "Ferrum":
         FerrumAPI.key_press(key)
     else:
         SerialAPI.key_press(key)
@@ -830,6 +920,8 @@ def test_move():
         DHZAPI.move(100, 100)
     elif state.active_backend == "MakV2Binary":
         MakV2Binary.move(100, 100)
+    elif state.active_backend == "MakxdMakAPI":
+        MakxdMakAPI.move(100, 100)
     elif state.active_backend == "MakV2":
         MakV2.move(100, 100)
     elif state.active_backend == "MakcuController":
@@ -849,6 +941,8 @@ def lock_button_idx(idx: int):
         return
     if state.active_backend == "MakV2Binary":
         MakV2Binary.lock_button_idx(idx)
+    elif state.active_backend == "MakxdMakAPI":
+        MakxdMakAPI.lock_button_idx(idx)
     elif state.active_backend == "MakV2":
         MakV2.lock_button_idx(idx)
     elif state.active_backend == "Serial":
@@ -860,6 +954,8 @@ def unlock_button_idx(idx: int):
         return
     if state.active_backend == "MakV2Binary":
         MakV2Binary.unlock_button_idx(idx)
+    elif state.active_backend == "MakxdMakAPI":
+        MakxdMakAPI.unlock_button_idx(idx)
     elif state.active_backend == "MakV2":
         MakV2.unlock_button_idx(idx)
     elif state.active_backend == "Serial":
@@ -869,6 +965,8 @@ def unlock_button_idx(idx: int):
 def unlock_all_locks():
     if state.active_backend == "MakV2Binary":
         MakV2Binary.unlock_all_locks()
+    elif state.active_backend == "MakxdMakAPI":
+        MakxdMakAPI.unlock_all_locks()
     elif state.active_backend == "MakV2":
         MakV2.unlock_all_locks()
     elif state.active_backend == "Serial":
@@ -878,6 +976,8 @@ def unlock_all_locks():
 def lock_movement_x(lock: bool = True, skip_lock: bool = False):
     if state.active_backend == "MakV2Binary":
         MakV2Binary.lock_movement_x(lock=lock, skip_lock=skip_lock)
+    elif state.active_backend == "MakxdMakAPI":
+        MakxdMakAPI.lock_movement_x(lock=lock, skip_lock=skip_lock)
     elif state.active_backend == "MakV2":
         MakV2.lock_movement_x(lock=lock, skip_lock=skip_lock)
     elif state.active_backend == "Serial":
@@ -887,6 +987,8 @@ def lock_movement_x(lock: bool = True, skip_lock: bool = False):
 def lock_movement_y(lock: bool = True, skip_lock: bool = False):
     if state.active_backend == "MakV2Binary":
         MakV2Binary.lock_movement_y(lock=lock, skip_lock=skip_lock)
+    elif state.active_backend == "MakxdMakAPI":
+        MakxdMakAPI.lock_movement_y(lock=lock, skip_lock=skip_lock)
     elif state.active_backend == "MakV2":
         MakV2.lock_movement_y(lock=lock, skip_lock=skip_lock)
     elif state.active_backend == "Serial":
@@ -896,6 +998,8 @@ def lock_movement_y(lock: bool = True, skip_lock: bool = False):
 def update_movement_lock(lock_x: bool, lock_y: bool, is_main: bool = True):
     if state.active_backend == "MakV2Binary":
         MakV2Binary.update_movement_lock(lock_x=lock_x, lock_y=lock_y, is_main=is_main)
+    elif state.active_backend == "MakxdMakAPI":
+        MakxdMakAPI.update_movement_lock(lock_x=lock_x, lock_y=lock_y, is_main=is_main)
     elif state.active_backend == "MakV2":
         MakV2.update_movement_lock(lock_x=lock_x, lock_y=lock_y, is_main=is_main)
     elif state.active_backend == "Serial":
@@ -905,6 +1009,8 @@ def update_movement_lock(lock_x: bool, lock_y: bool, is_main: bool = True):
 def tick_movement_lock_manager():
     if state.active_backend == "MakV2Binary":
         MakV2Binary.tick_movement_lock_manager()
+    elif state.active_backend == "MakxdMakAPI":
+        MakxdMakAPI.tick_movement_lock_manager()
     elif state.active_backend == "MakV2":
         MakV2.tick_movement_lock_manager()
     elif state.active_backend == "Serial":
@@ -914,6 +1020,8 @@ def tick_movement_lock_manager():
 def mask_manager_tick(selected_idx: int, aimbot_running: bool):
     if state.active_backend == "MakV2Binary":
         MakV2Binary.mask_manager_tick(selected_idx=selected_idx, aimbot_running=aimbot_running)
+    elif state.active_backend == "MakxdMakAPI":
+        MakxdMakAPI.mask_manager_tick(selected_idx=selected_idx, aimbot_running=aimbot_running)
     elif state.active_backend == "MakV2":
         MakV2.mask_manager_tick(selected_idx=selected_idx, aimbot_running=aimbot_running)
     elif state.active_backend == "Serial":
@@ -969,6 +1077,8 @@ class Mouse:
             DHZAPI.move(x, y)
         elif state.active_backend == "MakV2Binary":
             MakV2Binary.move(x, y)
+        elif state.active_backend == "MakxdMakAPI":
+            MakxdMakAPI.move(x, y)
         elif state.active_backend == "MakV2":
             MakV2.move(x, y)
         elif state.active_backend == "MakcuController":
@@ -993,6 +1103,8 @@ class Mouse:
             DHZAPI.move_bezier(x, y, segments, ctrl_x, ctrl_y)
         elif state.active_backend == "MakV2Binary":
             MakV2Binary.move_bezier(x, y, segments, ctrl_x, ctrl_y)
+        elif state.active_backend == "MakxdMakAPI":
+            MakxdMakAPI.move_bezier(x, y, segments, ctrl_x, ctrl_y)
         elif state.active_backend == "MakV2":
             MakV2.move_bezier(x, y, segments, ctrl_x, ctrl_y)
         elif state.active_backend == "MakcuController":
@@ -1021,6 +1133,9 @@ class Mouse:
         elif state.active_backend == "MakV2Binary":
             MakV2Binary.left(1)
             MakV2Binary.left(0)
+        elif state.active_backend == "MakxdMakAPI":
+            MakxdMakAPI.left(1)
+            MakxdMakAPI.left(0)
         elif state.active_backend == "MakV2":
             MakV2.left(1)
             MakV2.left(0)
@@ -1052,6 +1167,8 @@ class Mouse:
             DHZAPI.left(1)
         elif state.active_backend == "MakV2Binary":
             MakV2Binary.left(1)
+        elif state.active_backend == "MakxdMakAPI":
+            MakxdMakAPI.left(1)
         elif state.active_backend == "MakV2":
             MakV2.left(1)
         elif state.active_backend == "MakcuController":
@@ -1077,6 +1194,8 @@ class Mouse:
             DHZAPI.left(0)
         elif state.active_backend == "MakV2Binary":
             MakV2Binary.left(0)
+        elif state.active_backend == "MakxdMakAPI":
+            MakxdMakAPI.left(0)
         elif state.active_backend == "MakV2":
             MakV2.left(0)
         elif state.active_backend == "MakcuController":
@@ -1129,7 +1248,7 @@ class Mouse:
                 state.movement_lock_state["lock_y"] = False
                 state.movement_lock_state["main_aimbot_locked"] = False
                 state.movement_lock_state["sec_aimbot_locked"] = False
-            if state.is_connected and state.active_backend in ("Serial", "MakV2", "MakV2Binary"):
+            if state.is_connected and state.active_backend in ("Serial", "MakV2", "MakV2Binary", "MakxdMakAPI"):
                 lock_movement_x(False)
                 lock_movement_y(False)
         except Exception:

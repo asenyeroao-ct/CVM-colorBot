@@ -18,6 +18,7 @@ SUPPORTED_DEVICES = [
 ]
 
 DEFAULT_BAUD_RATES = [4_000_000, 2_000_000, 1_000_000, 115_200]
+ACTIVE_BACKENDS = ("MakV2Binary", "MakxdMakAPI")
 
 # V2 API Binary Command Codes
 # 根據 MAKCU API 3.9 文檔
@@ -124,7 +125,7 @@ def _start_listener_thread():
 def _listener_loop():
     state.reset_button_states()
 
-    while state.is_connected and state.active_backend == "MakV2Binary":
+    while state.is_connected and state.active_backend in ACTIVE_BACKENDS:
         try:
             if state.makcu is None:
                 time.sleep(0.01)
@@ -174,10 +175,10 @@ def _safe_close_port():
     state.makcu = None
 
 
-def connect(port: str = None, baud: int = None):
+def connect(port: str = None, baud: int = None, backend_name: str = "MakV2Binary", log_name: str = "MakV2Binary"):
     state.last_connect_error = ""
     disconnect()
-    state.set_connected(False, "MakV2Binary")
+    state.set_connected(False, backend_name)
 
     selected_port = str(port).strip() if port is not None else ""
     if selected_port:
@@ -185,7 +186,7 @@ def connect(port: str = None, baud: int = None):
     else:
         ports = find_com_ports()
         if not ports:
-            state.last_connect_error = "No supported serial devices found for MakV2Binary."
+            state.last_connect_error = f"No supported serial devices found for {log_name}."
             log_print(f"[ERROR] {state.last_connect_error}")
             return False
 
@@ -196,7 +197,7 @@ def connect(port: str = None, baud: int = None):
             ser = None
             try:
                 label = "MANUAL" if dev_name == "MANUAL" else dev_name
-                log_print(f"[INFO] Probing MakV2Binary {label} {port_name} @ {baud_value}...")
+                log_print(f"[INFO] Probing {log_name} {label} {port_name} @ {baud_value}...")
                 ser = serial.Serial(port_name, baud_value, timeout=0.3)
                 time.sleep(0.1)
                 
@@ -217,12 +218,12 @@ def connect(port: str = None, baud: int = None):
                     state.makcu.write(cmd)
                     state.makcu.flush()
 
-                state.set_connected(True, "MakV2Binary")
+                state.set_connected(True, backend_name)
                 _start_listener_thread()
-                log_print(f"[INFO] Connected to MakV2Binary on {port_name} at {baud_value} baud.")
+                log_print(f"[INFO] Connected to {log_name} on {port_name} at {baud_value} baud.")
                 return True
             except Exception as e:
-                log_print(f"[WARN] MakV2Binary failed {dev_name}@{baud_value}: {e}")
+                log_print(f"[WARN] {log_name} failed {dev_name}@{baud_value}: {e}")
                 if ser:
                     try:
                         ser.close()
@@ -233,13 +234,14 @@ def connect(port: str = None, baud: int = None):
     if selected_port:
         state.last_connect_error = f"Could not connect to manual serial port: {selected_port}."
     else:
-        state.last_connect_error = "Could not connect to any supported serial device for MakV2Binary."
+        state.last_connect_error = f"Could not connect to any supported serial device for {log_name}."
     log_print(f"[ERROR] {state.last_connect_error}")
     return False
 
 
 def disconnect():
-    state.set_connected(False, "MakV2Binary")
+    backend = state.active_backend if state.active_backend in ACTIVE_BACKENDS else "MakV2Binary"
+    state.set_connected(False, backend)
     _safe_close_port()
     state.listener_thread = None
     state.mask_applied_idx = None
@@ -253,7 +255,7 @@ def is_button_pressed(idx: int) -> bool:
 
 def _send_cmd_no_wait_binary(cmd_code: int, payload: bytes = b""):
     """發送二進制命令（非阻塞）"""
-    if not state.is_connected or state.active_backend != "MakV2Binary" or state.makcu is None:
+    if not state.is_connected or state.active_backend not in ACTIVE_BACKENDS or state.makcu is None:
         return
     try:
         with state.makcu_lock:
@@ -266,7 +268,7 @@ def _send_cmd_no_wait_binary(cmd_code: int, payload: bytes = b""):
 
 def _send_cmd_ascii(cmd: str):
     """發送 ASCII 命令（用於 lock 等命令）"""
-    if not state.is_connected or state.active_backend != "MakV2Binary" or state.makcu is None:
+    if not state.is_connected or state.active_backend not in ACTIVE_BACKENDS or state.makcu is None:
         return
     try:
         with state.makcu_lock:
@@ -377,7 +379,7 @@ def unlock_all_locks():
 
 
 def lock_movement_x(lock: bool = True, skip_lock: bool = False):
-    if not state.is_connected or state.active_backend != "MakV2Binary":
+    if not state.is_connected or state.active_backend not in ACTIVE_BACKENDS:
         return
 
     try:
@@ -396,7 +398,7 @@ def lock_movement_x(lock: bool = True, skip_lock: bool = False):
 
 
 def lock_movement_y(lock: bool = True, skip_lock: bool = False):
-    if not state.is_connected or state.active_backend != "MakV2Binary":
+    if not state.is_connected or state.active_backend not in ACTIVE_BACKENDS:
         return
 
     try:
@@ -415,7 +417,7 @@ def lock_movement_y(lock: bool = True, skip_lock: bool = False):
 
 
 def update_movement_lock(lock_x: bool, lock_y: bool, is_main: bool = True):
-    if not state.is_connected or state.active_backend != "MakV2Binary":
+    if not state.is_connected or state.active_backend not in ACTIVE_BACKENDS:
         return
 
     try:
@@ -439,7 +441,7 @@ def update_movement_lock(lock_x: bool, lock_y: bool, is_main: bool = True):
 
 
 def tick_movement_lock_manager():
-    if not state.is_connected or state.active_backend != "MakV2Binary":
+    if not state.is_connected or state.active_backend not in ACTIVE_BACKENDS:
         return
 
     try:
@@ -489,7 +491,7 @@ def tick_movement_lock_manager():
 
 
 def mask_manager_tick(selected_idx: int, aimbot_running: bool):
-    if not state.is_connected or state.active_backend != "MakV2Binary":
+    if not state.is_connected or state.active_backend not in ACTIVE_BACKENDS:
         state.mask_applied_idx = None
         return
 

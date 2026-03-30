@@ -58,7 +58,8 @@ class Config:
         self.selected_2_tb = 2
         self.in_game_sens = 0.235
         self.mouse_dpi = 800
-        self.mouse_api = "Serial"  # Serial, Arduino, SendInput, Net, KmboxA, MakV2, MakcuController, DHZ
+        self.mouse_api = "Serial"  # Serial, Arduino, SendInput, Net, KmboxA, MakV2, MakcuController, MakxdMakAPI, DHZ
+        self.keyboard_api = "Follow Mouse API"  # Follow Mouse API, SendInput, Serial, Net...
         self.auto_connect_mouse_api = False
         self.serial_auto_switch_4m = False
         self.serial_port_mode = "Auto"  # Auto, Manual
@@ -77,6 +78,8 @@ class Config:
         self.makv2_baud = 4000000
         self.makcu_controller_port = ""
         self.makcu_controller_baud = 115200
+        self.makxd_mak_port = ""
+        self.makxd_mak_baud = 115200
         self.dhz_ip = "192.168.2.188"
         self.dhz_port = "5000"
         self.dhz_random = 0
@@ -84,8 +87,8 @@ class Config:
         self.aimbot_activation_type = "hold_enable"  # Main Aimbot: hold_enable, hold_disable, toggle, use_enable
         self.aimbot_activation_type_sec = "hold_enable"  # Sec Aimbot: hold_enable, hold_disable, toggle, use_enable
         # --- Aimbot Mode ---
-        self.mode = "Normal"        # Main Aimbot 妯″紡: Normal, Silent, NCAF, WindMouse, Bezier, PID
-        self.mode_sec = "Normal"    # Sec Aimbot 妯″紡: Normal, Silent, NCAF, WindMouse, Bezier, PID
+        self.mode = "Normal"        # Main Aimbot 妯″紡: Normal, Flick, Silent, NCAF, WindMouse, Bezier, PID
+        self.mode_sec = "Normal"    # Sec Aimbot 妯″紡: Normal, Flick, Silent, NCAF, WindMouse, Bezier, PID
 
         self.fovsize = 100
         self.ads_fov_enabled = False
@@ -131,11 +134,78 @@ class Config:
         self.trigger_min_pixels = 4
         self.trigger_min_ratio = 0.03
         self.trigger_confirm_frames = 2
+        self.enable_magnet_trigger = False
+        self.magnet_keybind = 0
+        self.magnet_activation_type = "hold_enable"  # hold_enable, hold_disable, toggle
+        self.magnet_mode = "Normal"
+        self.magnet_trigger_type = "current"  # current, rgb
+        self.magnet_fov = 45.0
+        self.magnet_pull_x = 1.2
+        self.magnet_pull_y = 1.2
+        self.magnet_fire_radius = 6.0
+        self.magnet_cooldown_ms = 120.0  # legacy fallback
+        self.magnet_trigger_delay_min = 0.08
+        self.magnet_trigger_delay_max = 0.15
+        self.magnet_trigger_hold_min = 40.0
+        self.magnet_trigger_hold_max = 60.0
+        self.magnet_trigger_cooldown_min = 0.0
+        self.magnet_trigger_cooldown_max = 0.0
+        self.magnet_trigger_confirm_frames = 1
+        self.magnet_trigger_roi_size = 8
+        self.magnet_rgb_trigger_delay_min = 0.08
+        self.magnet_rgb_trigger_delay_max = 0.15
+        self.magnet_rgb_trigger_hold_min = 40.0
+        self.magnet_rgb_trigger_hold_max = 60.0
+        self.magnet_rgb_trigger_cooldown_min = 0.0
+        self.magnet_rgb_trigger_cooldown_max = 0.0
+        self.magnet_rgb_color_profile = "purple"
+        self.magnet_rgb_custom_r = 161
+        self.magnet_rgb_custom_g = 69
+        self.magnet_rgb_custom_b = 163
+        self.magnet_rgb_tolerance = 30
+        self.magnet_normal_x_speed = 3.0
+        self.magnet_normal_y_speed = 3.0
+        self.magnet_normalsmooth = 30.0
+        self.magnet_normalsmoothfov = 30.0
+        self.magnet_flick_strength_x = 5.0
+        self.magnet_flick_strength_y = 5.0
+        self.magnet_silent_distance = 1.0
+        self.magnet_silent_delay = 100.0
+        self.magnet_silent_move_delay = 500.0
+        self.magnet_silent_return_delay = 500.0
+        self.magnet_ncaf_snap_radius = 150.0
+        self.magnet_ncaf_near_radius = 50.0
+        self.magnet_ncaf_alpha = 1.5
+        self.magnet_ncaf_snap_boost = 0.3
+        self.magnet_ncaf_max_step = 50.0
+        self.magnet_ncaf_min_speed_multiplier = 0.01
+        self.magnet_ncaf_max_speed_multiplier = 10.0
+        self.magnet_ncaf_prediction_interval = 0.016
+        self.magnet_wm_gravity = 9.0
+        self.magnet_wm_wind = 3.0
+        self.magnet_wm_max_step = 15.0
+        self.magnet_wm_min_step = 2.0
+        self.magnet_wm_min_delay = 0.001
+        self.magnet_wm_max_delay = 0.003
+        self.magnet_wm_distance_threshold = 50.0
+        self.magnet_bezier_segments = 8
+        self.magnet_bezier_ctrl_x = 16.0
+        self.magnet_bezier_ctrl_y = 16.0
+        self.magnet_bezier_speed = 1.0
+        self.magnet_bezier_delay = 0.002
+        self.magnet_pid_kp_min = 3.7
+        self.magnet_pid_kp_max = 3.7
+        self.magnet_pid_ki = 24.0
+        self.magnet_pid_kd = 0.11
+        self.magnet_pid_max_output = 50.0
+        self.magnet_pid_x_speed = 1.0
+        self.magnet_pid_y_speed = 1.0
         self.switch_confirm_frames = 3
         self.ema_alpha = 0.35
         
         # RCS (Recoil Control System) 瑷疆
         self.enablercs = False  # 鏄惁鍟熺敤 RCS
+        self.rcs_keybind = 0  # RCS 綁定, default = Left Mouse Button
         self.rcs_pull_speed = 10  # 涓嬫媺閫熷害锛?-20锛?
         self.rcs_activation_delay = 100  # 鍟熷嫊寤堕伈锛?0-500ms锛?
         self.rcs_rapid_click_threshold = 200  # 蹇€熼粸鎿婇柧鍊硷紙100-1000ms锛?
@@ -148,6 +218,10 @@ class Config:
 
         self.normalsmooth = 30
         self.normalsmoothfov = 30
+
+        # --- Flick Aim ---
+        self.flick_strength_x = 5.0
+        self.flick_strength_y = 5.0
         
         # --- Secondary Aimbot ---
         self.enableaim_sec = False
@@ -155,6 +229,8 @@ class Config:
         self.normal_y_speed_sec = 2
         self.normalsmooth_sec = 20
         self.normalsmoothfov_sec = 20
+        self.flick_strength_x_sec = 5.0
+        self.flick_strength_y_sec = 5.0
         self.fovsize_sec = 150
         self.ads_fov_enabled_sec = False
         self.ads_fovsize_sec = 150
@@ -381,6 +457,7 @@ class Config:
             "in_game_sens": self.in_game_sens,
             "mouse_dpi": self.mouse_dpi,
             "mouse_api": self.mouse_api,
+            "keyboard_api": self.keyboard_api,
             "auto_connect_mouse_api": self.auto_connect_mouse_api,
             "serial_auto_switch_4m": self.serial_auto_switch_4m,
             "serial_port_mode": self.serial_port_mode,
@@ -399,6 +476,8 @@ class Config:
             "makv2_baud": self.makv2_baud,
             "makcu_controller_port": self.makcu_controller_port,
             "makcu_controller_baud": self.makcu_controller_baud,
+            "makxd_mak_port": self.makxd_mak_port,
+            "makxd_mak_baud": self.makxd_mak_baud,
             "dhz_ip": self.dhz_ip,
             "dhz_port": self.dhz_port,
             "dhz_random": self.dhz_random,
@@ -447,11 +526,78 @@ class Config:
             "trigger_min_pixels": self.trigger_min_pixels,
             "trigger_min_ratio": self.trigger_min_ratio,
             "trigger_confirm_frames": self.trigger_confirm_frames,
+            "enable_magnet_trigger": self.enable_magnet_trigger,
+            "magnet_keybind": self.magnet_keybind,
+            "magnet_activation_type": self.magnet_activation_type,
+            "magnet_mode": self.magnet_mode,
+            "magnet_trigger_type": self.magnet_trigger_type,
+            "magnet_fov": self.magnet_fov,
+            "magnet_pull_x": self.magnet_pull_x,
+            "magnet_pull_y": self.magnet_pull_y,
+            "magnet_fire_radius": self.magnet_fire_radius,
+            "magnet_cooldown_ms": self.magnet_cooldown_ms,
+            "magnet_trigger_delay_min": self.magnet_trigger_delay_min,
+            "magnet_trigger_delay_max": self.magnet_trigger_delay_max,
+            "magnet_trigger_hold_min": self.magnet_trigger_hold_min,
+            "magnet_trigger_hold_max": self.magnet_trigger_hold_max,
+            "magnet_trigger_cooldown_min": self.magnet_trigger_cooldown_min,
+            "magnet_trigger_cooldown_max": self.magnet_trigger_cooldown_max,
+            "magnet_trigger_confirm_frames": self.magnet_trigger_confirm_frames,
+            "magnet_trigger_roi_size": self.magnet_trigger_roi_size,
+            "magnet_rgb_trigger_delay_min": self.magnet_rgb_trigger_delay_min,
+            "magnet_rgb_trigger_delay_max": self.magnet_rgb_trigger_delay_max,
+            "magnet_rgb_trigger_hold_min": self.magnet_rgb_trigger_hold_min,
+            "magnet_rgb_trigger_hold_max": self.magnet_rgb_trigger_hold_max,
+            "magnet_rgb_trigger_cooldown_min": self.magnet_rgb_trigger_cooldown_min,
+            "magnet_rgb_trigger_cooldown_max": self.magnet_rgb_trigger_cooldown_max,
+            "magnet_rgb_color_profile": self.magnet_rgb_color_profile,
+            "magnet_rgb_custom_r": self.magnet_rgb_custom_r,
+            "magnet_rgb_custom_g": self.magnet_rgb_custom_g,
+            "magnet_rgb_custom_b": self.magnet_rgb_custom_b,
+            "magnet_rgb_tolerance": self.magnet_rgb_tolerance,
+            "magnet_normal_x_speed": self.magnet_normal_x_speed,
+            "magnet_normal_y_speed": self.magnet_normal_y_speed,
+            "magnet_normalsmooth": self.magnet_normalsmooth,
+            "magnet_normalsmoothfov": self.magnet_normalsmoothfov,
+            "magnet_flick_strength_x": self.magnet_flick_strength_x,
+            "magnet_flick_strength_y": self.magnet_flick_strength_y,
+            "magnet_silent_distance": self.magnet_silent_distance,
+            "magnet_silent_delay": self.magnet_silent_delay,
+            "magnet_silent_move_delay": self.magnet_silent_move_delay,
+            "magnet_silent_return_delay": self.magnet_silent_return_delay,
+            "magnet_ncaf_snap_radius": self.magnet_ncaf_snap_radius,
+            "magnet_ncaf_near_radius": self.magnet_ncaf_near_radius,
+            "magnet_ncaf_alpha": self.magnet_ncaf_alpha,
+            "magnet_ncaf_snap_boost": self.magnet_ncaf_snap_boost,
+            "magnet_ncaf_max_step": self.magnet_ncaf_max_step,
+            "magnet_ncaf_min_speed_multiplier": self.magnet_ncaf_min_speed_multiplier,
+            "magnet_ncaf_max_speed_multiplier": self.magnet_ncaf_max_speed_multiplier,
+            "magnet_ncaf_prediction_interval": self.magnet_ncaf_prediction_interval,
+            "magnet_wm_gravity": self.magnet_wm_gravity,
+            "magnet_wm_wind": self.magnet_wm_wind,
+            "magnet_wm_max_step": self.magnet_wm_max_step,
+            "magnet_wm_min_step": self.magnet_wm_min_step,
+            "magnet_wm_min_delay": self.magnet_wm_min_delay,
+            "magnet_wm_max_delay": self.magnet_wm_max_delay,
+            "magnet_wm_distance_threshold": self.magnet_wm_distance_threshold,
+            "magnet_bezier_segments": self.magnet_bezier_segments,
+            "magnet_bezier_ctrl_x": self.magnet_bezier_ctrl_x,
+            "magnet_bezier_ctrl_y": self.magnet_bezier_ctrl_y,
+            "magnet_bezier_speed": self.magnet_bezier_speed,
+            "magnet_bezier_delay": self.magnet_bezier_delay,
+            "magnet_pid_kp_min": self.magnet_pid_kp_min,
+            "magnet_pid_kp_max": self.magnet_pid_kp_max,
+            "magnet_pid_ki": self.magnet_pid_ki,
+            "magnet_pid_kd": self.magnet_pid_kd,
+            "magnet_pid_max_output": self.magnet_pid_max_output,
+            "magnet_pid_x_speed": self.magnet_pid_x_speed,
+            "magnet_pid_y_speed": self.magnet_pid_y_speed,
             "switch_confirm_frames": self.switch_confirm_frames,
             "ema_alpha": self.ema_alpha,
             
             # RCS Settings
             "enablercs": self.enablercs,
+            "rcs_keybind": self.rcs_keybind,
             "rcs_pull_speed": self.rcs_pull_speed,
             "rcs_activation_delay": self.rcs_activation_delay,
             "rcs_rapid_click_threshold": self.rcs_rapid_click_threshold,
@@ -463,6 +609,8 @@ class Config:
             "normal_y_speed": self.normal_y_speed,
             "normalsmooth": self.normalsmooth,
             "normalsmoothfov": self.normalsmoothfov,
+            "flick_strength_x": self.flick_strength_x,
+            "flick_strength_y": self.flick_strength_y,
             
             # Secondary Aimbot
             "enableaim_sec": self.enableaim_sec,
@@ -470,6 +618,8 @@ class Config:
             "normal_y_speed_sec": self.normal_y_speed_sec,
             "normalsmooth_sec": self.normalsmooth_sec,
             "normalsmoothfov_sec": self.normalsmoothfov_sec,
+            "flick_strength_x_sec": self.flick_strength_x_sec,
+            "flick_strength_y_sec": self.flick_strength_y_sec,
             "fovsize_sec": self.fovsize_sec,
             "ads_fov_enabled_sec": self.ads_fov_enabled_sec,
             "ads_fovsize_sec": self.ads_fovsize_sec,
@@ -635,6 +785,10 @@ class Config:
                 setattr(self, key, value)
         serial_mode = str(getattr(self, "serial_port_mode", "Auto")).strip().lower()
         self.serial_port_mode = "Manual" if serial_mode == "manual" else "Auto"
+        keyboard_api = str(getattr(self, "keyboard_api", "Follow Mouse API")).strip()
+        if not keyboard_api:
+            keyboard_api = "Follow Mouse API"
+        self.keyboard_api = keyboard_api
         self.serial_auto_switch_4m = bool(getattr(self, "serial_auto_switch_4m", False))
         self.serial_port = str(getattr(self, "serial_port", "")).strip()
         self.arduino_port = str(getattr(self, "arduino_port", "")).strip()
@@ -650,6 +804,11 @@ class Config:
             self.makcu_controller_baud = int(getattr(self, "makcu_controller_baud", 115200))
         except Exception:
             self.makcu_controller_baud = 115200
+        self.makxd_mak_port = str(getattr(self, "makxd_mak_port", "")).strip()
+        try:
+            self.makxd_mak_baud = int(getattr(self, "makxd_mak_baud", 115200))
+        except Exception:
+            self.makxd_mak_baud = 115200
         self.arduino_16_bit_mouse = bool(getattr(self, "arduino_16_bit_mouse", True))
         self.ads_fov_enabled = bool(getattr(self, "ads_fov_enabled", False))
         self.ads_fov_enabled_sec = bool(getattr(self, "ads_fov_enabled_sec", False))
@@ -669,6 +828,7 @@ class Config:
                 return "Normal"
             mapping = {
                 "normal": "Normal",
+                "flick": "Flick",
                 "silent": "Silent",
                 "ncaf": "NCAF",
                 "windmouse": "WindMouse",
@@ -742,6 +902,130 @@ class Config:
         )
         trigger_ads_key_type = str(getattr(self, "trigger_ads_key_type", "hold")).strip().lower()
         self.trigger_ads_key_type = "toggle" if trigger_ads_key_type == "toggle" else "hold"
+        self.enable_magnet_trigger = bool(getattr(self, "enable_magnet_trigger", False))
+        self.magnet_keybind = getattr(self, "magnet_keybind", 0)
+        magnet_activation_type = str(getattr(self, "magnet_activation_type", "hold_enable")).strip().lower()
+        if magnet_activation_type not in {"hold_enable", "hold_disable", "toggle"}:
+            magnet_activation_type = "hold_enable"
+        self.magnet_activation_type = magnet_activation_type
+        self.magnet_mode = _normalize_aim_mode(getattr(self, "magnet_mode", "Normal"))
+        magnet_trigger_type = str(getattr(self, "magnet_trigger_type", "current")).strip().lower()
+        if magnet_trigger_type not in {"current", "rgb"}:
+            magnet_trigger_type = "current"
+        self.magnet_trigger_type = magnet_trigger_type
+        try:
+            self.magnet_fov = max(1.0, float(getattr(self, "magnet_fov", 45.0)))
+        except Exception:
+            self.magnet_fov = 45.0
+        try:
+            self.magnet_pull_x = max(0.01, min(5.0, float(getattr(self, "magnet_pull_x", 1.2))))
+        except Exception:
+            self.magnet_pull_x = 1.2
+        try:
+            self.magnet_pull_y = max(0.01, min(5.0, float(getattr(self, "magnet_pull_y", self.magnet_pull_x))))
+        except Exception:
+            self.magnet_pull_y = self.magnet_pull_x
+        try:
+            self.magnet_fire_radius = max(1.0, float(getattr(self, "magnet_fire_radius", 6.0)))
+        except Exception:
+            self.magnet_fire_radius = 6.0
+        try:
+            self.magnet_cooldown_ms = max(0.0, float(getattr(self, "magnet_cooldown_ms", 120.0)))
+        except Exception:
+            self.magnet_cooldown_ms = 120.0
+        for key, default, lower_bound, upper_bound in (
+            ("magnet_trigger_delay_min", 0.08, 0.0, 5.0),
+            ("magnet_trigger_delay_max", 0.15, 0.0, 5.0),
+            ("magnet_trigger_hold_min", 40.0, 0.0, 1000.0),
+            ("magnet_trigger_hold_max", 60.0, 0.0, 1000.0),
+            ("magnet_trigger_cooldown_min", 0.0, 0.0, 5.0),
+            ("magnet_trigger_cooldown_max", 0.0, 0.0, 5.0),
+            ("magnet_rgb_trigger_delay_min", 0.08, 0.0, 5.0),
+            ("magnet_rgb_trigger_delay_max", 0.15, 0.0, 5.0),
+            ("magnet_rgb_trigger_hold_min", 40.0, 0.0, 1000.0),
+            ("magnet_rgb_trigger_hold_max", 60.0, 0.0, 1000.0),
+            ("magnet_rgb_trigger_cooldown_min", 0.0, 0.0, 5.0),
+            ("magnet_rgb_trigger_cooldown_max", 0.0, 0.0, 5.0),
+            ("magnet_rgb_tolerance", 30.0, 0.0, 255.0),
+            ("magnet_normal_x_speed", 3.0, 0.01, 2000.0),
+            ("magnet_normal_y_speed", 3.0, 0.01, 2000.0),
+            ("magnet_normalsmooth", 30.0, 0.01, 1000.0),
+            ("magnet_normalsmoothfov", 30.0, 1.0, 1000.0),
+            ("magnet_flick_strength_x", 5.0, 0.01, 5.0),
+            ("magnet_flick_strength_y", 5.0, 0.01, 5.0),
+            ("magnet_silent_distance", 1.0, 0.1, 10.0),
+            ("magnet_silent_delay", 100.0, 0.0, 2000.0),
+            ("magnet_silent_move_delay", 500.0, 0.0, 2000.0),
+            ("magnet_silent_return_delay", 500.0, 0.0, 2000.0),
+            ("magnet_ncaf_snap_radius", 150.0, 1.0, 1000.0),
+            ("magnet_ncaf_near_radius", 50.0, 1.0, 1000.0),
+            ("magnet_ncaf_alpha", 1.5, 0.01, 10.0),
+            ("magnet_ncaf_snap_boost", 0.3, 0.01, 10.0),
+            ("magnet_ncaf_max_step", 50.0, 0.1, 500.0),
+            ("magnet_ncaf_min_speed_multiplier", 0.01, 0.001, 10.0),
+            ("magnet_ncaf_max_speed_multiplier", 10.0, 0.01, 50.0),
+            ("magnet_ncaf_prediction_interval", 0.016, 0.0, 1.0),
+            ("magnet_wm_gravity", 9.0, 0.1, 30.0),
+            ("magnet_wm_wind", 3.0, 0.1, 30.0),
+            ("magnet_wm_max_step", 15.0, 0.1, 100.0),
+            ("magnet_wm_min_step", 2.0, 0.1, 50.0),
+            ("magnet_wm_min_delay", 0.001, 0.0, 0.1),
+            ("magnet_wm_max_delay", 0.003, 0.0, 0.1),
+            ("magnet_wm_distance_threshold", 50.0, 1.0, 1000.0),
+            ("magnet_bezier_ctrl_x", 16.0, 0.0, 100.0),
+            ("magnet_bezier_ctrl_y", 16.0, 0.0, 100.0),
+            ("magnet_bezier_speed", 1.0, 0.01, 10.0),
+            ("magnet_bezier_delay", 0.002, 0.0, 0.1),
+            ("magnet_pid_kp_min", 3.7, 0.0, 20.0),
+            ("magnet_pid_kp_max", 3.7, 0.0, 20.0),
+            ("magnet_pid_ki", 24.0, 0.0, 100.0),
+            ("magnet_pid_kd", 0.11, 0.0, 10.0),
+            ("magnet_pid_max_output", 50.0, 0.1, 500.0),
+            ("magnet_pid_x_speed", 1.0, 0.01, 10.0),
+            ("magnet_pid_y_speed", 1.0, 0.01, 10.0),
+        ):
+            try:
+                parsed = float(getattr(self, key, default))
+            except Exception:
+                parsed = float(default)
+            setattr(self, key, max(float(lower_bound), min(float(upper_bound), parsed)))
+        try:
+            self.magnet_trigger_confirm_frames = max(
+                1, min(10, int(getattr(self, "magnet_trigger_confirm_frames", 1)))
+            )
+        except Exception:
+            self.magnet_trigger_confirm_frames = 1
+        try:
+            self.magnet_trigger_roi_size = max(
+                1, min(200, int(getattr(self, "magnet_trigger_roi_size", 8)))
+            )
+        except Exception:
+            self.magnet_trigger_roi_size = 8
+        try:
+            self.magnet_bezier_segments = max(1, min(30, int(getattr(self, "magnet_bezier_segments", 8))))
+        except Exception:
+            self.magnet_bezier_segments = 8
+        if self.magnet_pid_kp_min > self.magnet_pid_kp_max:
+            self.magnet_pid_kp_min, self.magnet_pid_kp_max = (
+                self.magnet_pid_kp_max,
+                self.magnet_pid_kp_min,
+            )
+        if self.magnet_ncaf_near_radius > self.magnet_ncaf_snap_radius:
+            self.magnet_ncaf_near_radius = self.magnet_ncaf_snap_radius
+        magnet_rgb_profile = str(getattr(self, "magnet_rgb_color_profile", "purple")).strip().lower()
+        if magnet_rgb_profile not in {"red", "yellow", "purple", "custom"}:
+            magnet_rgb_profile = "purple"
+        self.magnet_rgb_color_profile = magnet_rgb_profile
+        for channel_key, default in (
+            ("magnet_rgb_custom_r", 161),
+            ("magnet_rgb_custom_g", 69),
+            ("magnet_rgb_custom_b", 163),
+        ):
+            try:
+                channel_value = int(getattr(self, channel_key, default))
+            except Exception:
+                channel_value = int(default)
+            setattr(self, channel_key, max(0, min(255, channel_value)))
         # Backward compatibility: old config used `net_mac`.
         net_uuid = str(getattr(self, "net_uuid", "")).strip()
         net_mac = str(getattr(self, "net_mac", "")).strip()

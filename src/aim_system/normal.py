@@ -13,6 +13,7 @@ from src.utils.debug_logger import log_move, log_print
 from src.utils.activation import check_aimbot_activation, get_active_aim_fov
 from .Triggerbot import process_triggerbot
 from .RCS import process_rcs, check_y_release
+from .MagnetTrigger import process_magnet_trigger
 from .mode_dispatcher import dispatch as dispatch_aim_mode
 
 
@@ -379,6 +380,54 @@ def _apply_normal_aim(dx, dy, distance_to_center, tracker, is_sec=False):
     
     if qdx != 0 or qdy != 0:
         _queue_move(tracker, qdx, qdy, dynamic_delay, drop_oldest=True)
+        log_move(qdx, qdy, label)
+
+
+def _apply_flick_aim(dx, dy, tracker, is_sec=False):
+    """
+    Flick mode 鐬勬簴锛氬弬鑰?C++ mode_silent.cpp 鐨?ApplyModeFlick锛?
+    directly scale raw delta and dispatch one immediate move.
+    """
+    if is_sec:
+        strength_x = float(getattr(config, "flick_strength_x_sec", 5.0))
+        strength_y = float(getattr(config, "flick_strength_y_sec", strength_x))
+        label = "Sec Aimbot (Flick)"
+    else:
+        strength_x = float(getattr(config, "flick_strength_x", 5.0))
+        strength_y = float(getattr(config, "flick_strength_y", strength_x))
+        label = "Main Aimbot (Flick)"
+
+    strength_x = max(0.01, min(5.0, strength_x))
+    if strength_y <= 0.0:
+        strength_y = strength_x
+    strength_y = max(0.01, min(5.0, strength_y))
+
+    out_x = float(dx) * (strength_x / 5.0)
+    out_y = float(dy) * (strength_y / 5.0)
+
+    ddx, ddy = tracker._clip_movement(out_x, out_y)
+    qdx, qdy = _quantize_with_residual(tracker, ddx, ddy, is_sec=is_sec)
+    if qdx == 0 and qdy == 0 and (abs(dx) + abs(dy)) >= 1.0:
+        if abs(dx) >= abs(dy):
+            qdx = 1 if dx > 0 else -1
+        else:
+            qdy = 1 if dy > 0 else -1
+
+    try:
+        from src.utils.mouse import update_movement_lock
+        if not is_sec:
+            lock_x = getattr(config, "mouse_lock_main_x", False)
+            lock_y = getattr(config, "mouse_lock_main_y", False)
+        else:
+            lock_x = getattr(config, "mouse_lock_sec_x", False)
+            lock_y = getattr(config, "mouse_lock_sec_y", False)
+        if lock_x or lock_y:
+            update_movement_lock(lock_x, lock_y, is_main=not is_sec)
+    except Exception:
+        pass
+
+    if qdx != 0 or qdy != 0:
+        _queue_move(tracker, qdx, qdy, 0.0, drop_oldest=True)
         log_move(qdx, qdy, label)
 
 
@@ -815,6 +864,7 @@ def process_normal_mode(
     center_y = frame.yres / 2.0
     
     main_aimbot_active = False
+    sec_aimbot_active = False
     
     # 鍙栧緱鍚勮嚜鐨?Operation Mode
     mode_main = getattr(config, "mode", "Normal")
@@ -903,21 +953,37 @@ def process_normal_mode(
                         
                         # 鏍规摎 Sec 妯″紡瑾垮害
                         _dispatch_aimbot(dx, dy, distance_to_center_sec, mode_sec, tracker, is_sec=True)
+                        sec_aimbot_active = True
                     except Exception as e:
                         log_print(f"[Sec Aimbot error] {e}")
-    
-    # 铏曠悊 Triggerbot锛堢劇璜栨槸鍚︽湁鐩閮芥渻鍩疯锛?
-    try:
-        status = process_triggerbot(
-            frame, img, tracker.model, tracker.controller,
-            tracker.tbdelay_min, tracker.tbdelay_max,
-            tracker.tbhold_min, tracker.tbhold_max,
-            tracker.tbcooldown_min, tracker.tbcooldown_max,
-            tracker.tbburst_count_min, tracker.tbburst_count_max,
-            tracker.tbburst_interval_min, tracker.tbburst_interval_max,
-            targets=targets_trigger,
-            source_img=trigger_img,
-        )
-    except Exception as e:
-        log_print("[Triggerbot error]", e)
+
+    magnet_enabled = bool(getattr(config, "enable_magnet_trigger", False))
+    if magnet_enabled:
+        try:
+            process_magnet_trigger(
+                frame=frame,
+                source_img=trigger_img,
+                tracker=tracker,
+                targets=targets_trigger,
+                center_x=center_x,
+                center_y=center_y,
+                aimbot_active=(main_aimbot_active or sec_aimbot_active),
+            )
+        except Exception as e:
+            log_print("[Magnet Trigger error]", e)
+    else:
+        # 铏曠悊 Triggerbot锛堢劇璜栨槸鍚︽湁鐩閮芥渻鍩疯锛?
+        try:
+            status = process_triggerbot(
+                frame, img, tracker.model, tracker.controller,
+                tracker.tbdelay_min, tracker.tbdelay_max,
+                tracker.tbhold_min, tracker.tbhold_max,
+                tracker.tbcooldown_min, tracker.tbcooldown_max,
+                tracker.tbburst_count_min, tracker.tbburst_count_max,
+                tracker.tbburst_interval_min, tracker.tbburst_interval_max,
+                targets=targets_trigger,
+                source_img=trigger_img,
+            )
+        except Exception as e:
+            log_print("[Triggerbot error]", e)
 

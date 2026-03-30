@@ -6,7 +6,7 @@ from src.utils.debug_logger import log_print
 import time
 import threading
 from src.utils.config import config
-from src.utils.mouse import is_button_pressed
+from src.utils.activation import is_binding_pressed
 
 
 # 全局變量用於管理 RCS 狀態
@@ -72,7 +72,7 @@ def check_rcs_activation(activation_delay, rapid_click_threshold):
     now = time.time()
     
     # 檢查左鍵是否按下
-    left_button_pressed = is_button_pressed(0)  # 0 = 左鍵
+    left_button_pressed = bool(is_binding_pressed(getattr(config, "rcs_keybind", 0)))
     
     with _rcs_state["rcs_lock"]:
         if left_button_pressed:
@@ -173,7 +173,7 @@ def process_rcs(controller, pull_speed, activation_delay, rapid_click_threshold)
         start_rcs(controller, pull_speed)
     else:
         # 檢查左鍵是否還按下，如果沒有按下則停止 RCS
-        if not is_button_pressed(0):
+        if not is_binding_pressed(getattr(config, "rcs_keybind", 0)):
             stop_rcs()
     
     return is_rcs_active()
@@ -200,7 +200,7 @@ def check_y_release():
     release_duration = max(0.1, min(5.0, release_duration))
     
     now = time.time()
-    left_button_pressed = is_button_pressed(0)  # 0 = 左鍵
+    left_button_pressed = bool(is_binding_pressed(getattr(config, "rcs_keybind", 0)))
     
     with _y_release_state["release_lock"]:
         if left_button_pressed:

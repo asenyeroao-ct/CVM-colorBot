@@ -20,6 +20,7 @@ from src.utils.config import config
 from src.capture.capture_service import CaptureService
 from src.utils.mouse_input import MouseInputMonitor
 from src.utils.debug_logger import get_recent_logs, clear_logs, get_log_count, log_print
+from src.utils.mouse.keycodes import to_vk_code
 from src.utils.updater import get_update_checker
 from src.ui_hsv_preview import HsvPreviewWindow
 
@@ -135,6 +136,13 @@ BUTTONS = {
     4: 'Side Mouse 5 Button'
 }
 BUTTON_NAME_TO_IDX = {name: idx for idx, name in BUTTONS.items()}
+BUTTON_IDX_TO_VK = {
+    0: 0x01,
+    1: 0x02,
+    2: 0x04,
+    3: 0x05,
+    4: 0x06,
+}
 
 ADS_KEY_DISPLAY_TO_BINDING = {
     "Right Mouse Button": "Right Mouse Button",
@@ -203,6 +211,7 @@ TRIGGER_STRAFE_MODE_DISPLAY = {
 
 AIM_MODE_DISPLAY_TO_VALUE = {
     "Normal": "Normal",
+    "Flick": "Flick",
     "Silent": "Silent",
     "NCAF": "NCAF",
     "WindMouse": "WindMouse",
@@ -283,6 +292,7 @@ class ViewerApp(ctk.CTk):
         self._teleport_stream_display_to_key = {}
         self.saved_ndi_source = getattr(config, "last_ndi_source", None)
         self.saved_mouse_api = getattr(config, "mouse_api", "Serial")
+        self.saved_keyboard_api = getattr(config, "keyboard_api", "Follow Mouse API")
         self.saved_net_ip = getattr(config, "net_ip", "192.168.2.188")
         self.saved_net_port = getattr(config, "net_port", "6234")
         self.saved_net_uuid = getattr(config, "net_uuid", getattr(config, "net_mac", ""))
@@ -298,6 +308,8 @@ class ViewerApp(ctk.CTk):
         self.saved_makv2_baud = str(getattr(config, "makv2_baud", 4000000))
         self.saved_makcu_controller_port = str(getattr(config, "makcu_controller_port", ""))
         self.saved_makcu_controller_baud = str(getattr(config, "makcu_controller_baud", 115200))
+        self.saved_makxd_mak_port = str(getattr(config, "makxd_mak_port", ""))
+        self.saved_makxd_mak_baud = str(getattr(config, "makxd_mak_baud", 115200))
         self.saved_dhz_ip = getattr(config, "dhz_ip", "192.168.2.188")
         self.saved_dhz_port = str(getattr(config, "dhz_port", "5000"))
         self.saved_dhz_random = str(getattr(config, "dhz_random", 0))
@@ -488,6 +500,7 @@ class ViewerApp(ctk.CTk):
                 ("Main Aimbot", self._show_aimbot_tab),
                 ("Sec Aimbot", self._show_sec_aimbot_tab),
                 ("Trigger", self._show_tb_tab),
+                ("Magnet Trigger", self._show_magnet_trigger_tab),
                 ("RCS", self._show_rcs_tab),
                 ("Config", self._show_config_tab),
                 ("Debug", self._show_debug_tab),
@@ -507,6 +520,7 @@ class ViewerApp(ctk.CTk):
 
             self._add_sidebar_group_label(nav_container, "Trigger")
             self._add_nav_item(nav_container, "Trigger", self._show_tb_tab, icon=">")
+            self._add_nav_item(nav_container, "Magnet Trigger", self._show_magnet_trigger_tab, icon=">")
 
             self._add_sidebar_group_label(nav_container, "Miscellaneous")
             self._add_nav_item(nav_container, "Config", self._show_config_tab, icon=">")
@@ -784,6 +798,7 @@ class ViewerApp(ctk.CTk):
             "Main Aimbot": self._show_aimbot_tab,
             "Sec Aimbot": self._show_sec_aimbot_tab,
             "Trigger": self._show_tb_tab,
+            "Magnet Trigger": self._show_magnet_trigger_tab,
             "RCS": self._show_rcs_tab,
             "Config": self._show_config_tab,
             "Debug": self._show_debug_tab,
@@ -801,10 +816,11 @@ class ViewerApp(ctk.CTk):
 
         # -- HARDWARE API (collapsible) --
         sec_hardware = self._create_collapsible_section(self.content_frame, "Hardware API", initially_open=True)
+        self._add_subtitle_in_frame(sec_hardware, "MOUSE")
         self.mouse_api_option = self._add_option_row_in_frame(
             sec_hardware,
             "Input API",
-            ["Serial (Makcu)", "Arduino", "SendInput", "Net", "KmboxA", "MakV2", "MakcuController", "MakV2Binary", "DHZ"],
+            ["Serial (Makcu)", "Arduino", "SendInput", "Net", "KmboxA", "MakV2", "MakcuController", "MakxdMakAPI", "MakV2Binary", "DHZ", "Ferrum"],
             self._on_mouse_api_changed,
         )
         self.var_auto_connect_mouse_api = tk.BooleanVar(value=bool(getattr(config, "auto_connect_mouse_api", False)))
@@ -824,6 +840,8 @@ class ViewerApp(ctk.CTk):
             current_mouse_api = "DHZ"
         elif current_mouse_api_norm in ("makv2binary", "makv2_binary", "makv2-binary", "binary"):
             current_mouse_api = "MakV2Binary"
+        elif current_mouse_api_norm in ("makxdmakapi", "makxd_makapi", "makxd-makapi", "makxd makapi", "makxd_mak", "makxd-mak"):
+            current_mouse_api = "MakxdMakAPI"
         elif current_mouse_api_norm in ("makv2", "mak_v2", "mak-v2"):
             current_mouse_api = "MakV2"
         elif current_mouse_api_norm in ("makcucontroller", "makcu_controller", "makcu-controller", "makcu controller"):
@@ -838,6 +856,42 @@ class ViewerApp(ctk.CTk):
             current_mouse_api = "Serial (Makcu)"
         self.mouse_api_option.set(current_mouse_api)
         self.saved_mouse_api = current_mouse_api
+
+        self._add_spacer_in_frame(sec_hardware)
+        self._add_subtitle_in_frame(sec_hardware, "KEYBOARD")
+        keyboard_options = [
+            "Follow Mouse API",
+            "SendInput",
+            "Serial (Makcu)",
+            "Net",
+            "KmboxA",
+            "MakV2",
+            "MakcuController",
+            "MakxdMakAPI",
+            "MakV2Binary",
+            "DHZ",
+            "Ferrum",
+        ]
+        self.keyboard_api_option = self._add_option_row_in_frame(
+            sec_hardware,
+            "Input API",
+            keyboard_options,
+            self._on_keyboard_api_changed,
+        )
+        current_keyboard_api = str(getattr(config, "keyboard_api", "Follow Mouse API")).strip()
+        normalized_keyboard_api = self._normalize_keyboard_api_name(current_keyboard_api)
+        self.keyboard_api_option.set(normalized_keyboard_api)
+        self.saved_keyboard_api = normalized_keyboard_api
+        ctk.CTkLabel(
+            sec_hardware,
+            text="Keyboard API is independent for keybind state and keyboard output. SendInput works without changing the active mouse backend.",
+            font=("Roboto", 9),
+            text_color=COLOR_TEXT_DIM,
+            justify="left",
+            wraplength=720,
+            anchor="w",
+        ).pack(fill="x", pady=(2, 8))
+
         serial_mode = str(getattr(config, "serial_port_mode", self.saved_serial_port_mode)).strip().lower()
         self.saved_serial_port_mode = "Manual" if serial_mode == "manual" else "Auto"
         self.saved_serial_port = str(getattr(config, "serial_port", self.saved_serial_port))
@@ -869,6 +923,8 @@ class ViewerApp(ctk.CTk):
         self.saved_makcu_controller_baud = str(
             getattr(config, "makcu_controller_baud", self.saved_makcu_controller_baud)
         )
+        self.saved_makxd_mak_port = str(getattr(config, "makxd_mak_port", self.saved_makxd_mak_port))
+        self.saved_makxd_mak_baud = str(getattr(config, "makxd_mak_baud", self.saved_makxd_mak_baud))
         self.saved_dhz_ip = getattr(config, "dhz_ip", self.saved_dhz_ip)
         self.saved_dhz_port = str(getattr(config, "dhz_port", self.saved_dhz_port))
         self.saved_dhz_random = str(getattr(config, "dhz_random", self.saved_dhz_random))
@@ -1144,6 +1200,8 @@ class ViewerApp(ctk.CTk):
             mode = "KmboxA"
         elif mode_norm == "dhz":
             mode = "DHZ"
+        elif mode_norm in ("makxdmakapi", "makxd_makapi", "makxd-makapi", "makxd makapi", "makxd_mak", "makxd-mak"):
+            mode = "MakxdMakAPI"
         elif mode_norm in ("makv2", "mak_v2", "mak-v2"):
             mode = "MakV2"
         elif mode_norm in ("makcucontroller", "makcu_controller", "makcu-controller", "makcu controller"):
@@ -1370,6 +1428,51 @@ class ViewerApp(ctk.CTk):
             self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
             return
 
+        if mode == "MakxdMakAPI":
+            tip = ctk.CTkLabel(
+                self.hardware_content_frame,
+                text="Makxd_Mak API (serial binary opcode protocol)",
+                font=("Roboto", 10),
+                text_color=COLOR_TEXT_DIM,
+            )
+            tip.pack(anchor="w", pady=(0, 8))
+
+            notice = ctk.CTkLabel(
+                self.hardware_content_frame,
+                text="Implements the MAKXD binary surface documented in Makxd_MakAPI.md.",
+                font=("Roboto", 9),
+                text_color=COLOR_TEXT_DIM,
+            )
+            notice.pack(anchor="w", pady=(0, 8))
+
+            port_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            port_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(port_frame, text="Port (optional)", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.makxd_mak_port_entry = ctk.CTkEntry(
+                port_frame, fg_color=COLOR_SURFACE, border_width=0, text_color=COLOR_TEXT, width=170
+            )
+            self.makxd_mak_port_entry.pack(side="right")
+            self.makxd_mak_port_entry.insert(0, self.saved_makxd_mak_port)
+            self.makxd_mak_port_entry.bind("<KeyRelease>", self._on_makxd_mak_port_changed)
+            self.makxd_mak_port_entry.bind("<FocusOut>", self._on_makxd_mak_port_changed)
+
+            baud_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            baud_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(baud_frame, text="Baud", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.makxd_mak_baud_entry = ctk.CTkEntry(
+                baud_frame, fg_color=COLOR_SURFACE, border_width=0, text_color=COLOR_TEXT, width=170
+            )
+            self.makxd_mak_baud_entry.pack(side="right")
+            self.makxd_mak_baud_entry.insert(0, self.saved_makxd_mak_baud)
+            self.makxd_mak_baud_entry.bind("<KeyRelease>", self._on_makxd_mak_baud_changed)
+            self.makxd_mak_baud_entry.bind("<FocusOut>", self._on_makxd_mak_baud_changed)
+
+            btn_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            btn_frame.pack(fill="x", pady=8)
+            self._add_text_button(btn_frame, "CONNECT MAKXD_MAKAPI", lambda: self._connect_mouse_api("MakxdMakAPI")).pack(side="left")
+            self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            return
+
         if mode == "DHZ":
             tip = ctk.CTkLabel(
                 self.hardware_content_frame,
@@ -1545,6 +1648,8 @@ class ViewerApp(ctk.CTk):
             self.saved_mouse_api = "KmboxA"
         elif mode_norm == "dhz":
             self.saved_mouse_api = "DHZ"
+        elif mode_norm in ("makxdmakapi", "makxd_makapi", "makxd-makapi", "makxd makapi", "makxd_mak", "makxd-mak"):
+            self.saved_mouse_api = "MakxdMakAPI"
         elif mode_norm in ("makv2binary", "makv2_binary", "makv2-binary", "binary"):
             self.saved_mouse_api = "MakV2Binary"
         elif mode_norm in ("makv2", "mak_v2", "mak-v2"):
@@ -1578,6 +1683,13 @@ class ViewerApp(ctk.CTk):
             pass
         self._update_mouse_api_ui()
         self._set_status_indicator(f"Status: Mouse API {self.saved_mouse_api} selected", COLOR_TEXT_DIM)
+        self._update_hardware_status_ui()
+
+    def _on_keyboard_api_changed(self, val):
+        normalized = self._normalize_keyboard_api_name(val)
+        self.saved_keyboard_api = normalized
+        config.keyboard_api = normalized
+        self._set_status_indicator(f"Status: Keyboard API {normalized} selected", COLOR_TEXT_DIM)
         self._update_hardware_status_ui()
 
         if str(getattr(self, "_active_tab_name", "")) == "Trigger":
@@ -1683,6 +1795,21 @@ class ViewerApp(ctk.CTk):
             except ValueError:
                 pass
 
+    def _on_makxd_mak_port_changed(self, event=None):
+        if hasattr(self, "makxd_mak_port_entry") and self.makxd_mak_port_entry.winfo_exists():
+            val = self.makxd_mak_port_entry.get().strip()
+            self.saved_makxd_mak_port = val
+            config.makxd_mak_port = val
+
+    def _on_makxd_mak_baud_changed(self, event=None):
+        if hasattr(self, "makxd_mak_baud_entry") and self.makxd_mak_baud_entry.winfo_exists():
+            val = self.makxd_mak_baud_entry.get().strip()
+            self.saved_makxd_mak_baud = val
+            try:
+                config.makxd_mak_baud = int(val)
+            except ValueError:
+                pass
+
     def _on_dhz_ip_changed(self, event=None):
         if hasattr(self, "dhz_ip_entry") and self.dhz_ip_entry.winfo_exists():
             val = self.dhz_ip_entry.get().strip()
@@ -1783,6 +1910,8 @@ class ViewerApp(ctk.CTk):
             mode = "KmboxA"
         elif mode_norm == "dhz":
             mode = "DHZ"
+        elif mode_norm in ("makxdmakapi", "makxd_makapi", "makxd-makapi", "makxd makapi", "makxd_mak", "makxd-mak"):
+            mode = "MakxdMakAPI"
         elif mode_norm in ("makv2", "mak_v2", "mak-v2"):
             mode = "MakV2"
         elif mode_norm in ("makcucontroller", "makcu_controller", "makcu-controller", "makcu controller"):
@@ -1885,6 +2014,21 @@ class ViewerApp(ctk.CTk):
                 "makcu_controller_port": self.saved_makcu_controller_port,
                 "makcu_controller_baud": config.makcu_controller_baud,
             })
+        elif mode == "MakxdMakAPI":
+            if hasattr(self, "makxd_mak_port_entry") and self.makxd_mak_port_entry.winfo_exists():
+                self.saved_makxd_mak_port = self.makxd_mak_port_entry.get().strip()
+            if hasattr(self, "makxd_mak_baud_entry") and self.makxd_mak_baud_entry.winfo_exists():
+                self.saved_makxd_mak_baud = self.makxd_mak_baud_entry.get().strip()
+
+            config.makxd_mak_port = self.saved_makxd_mak_port
+            try:
+                config.makxd_mak_baud = int(self.saved_makxd_mak_baud)
+            except ValueError:
+                config.makxd_mak_baud = 115200
+            payload.update({
+                "makxd_mak_port": self.saved_makxd_mak_port,
+                "makxd_mak_baud": config.makxd_mak_baud,
+            })
         elif mode == "DHZ":
             if hasattr(self, "dhz_ip_entry") and self.dhz_ip_entry.winfo_exists():
                 self.saved_dhz_ip = self.dhz_ip_entry.get().strip()
@@ -1969,6 +2113,12 @@ class ViewerApp(ctk.CTk):
                     makcu_controller_port=payload.get("makcu_controller_port", ""),
                     makcu_controller_baud=payload.get("makcu_controller_baud", 115200),
                 )
+            elif mode == "MakxdMakAPI":
+                success, error = switch_backend(
+                    "MakxdMakAPI",
+                    makxd_mak_port=payload.get("makxd_mak_port", ""),
+                    makxd_mak_baud=payload.get("makxd_mak_baud", 115200),
+                )
             elif mode == "DHZ":
                 success, error = switch_backend(
                     "DHZ",
@@ -2012,6 +2162,8 @@ class ViewerApp(ctk.CTk):
                 self._set_status_indicator("Status: Mouse API connected (MakV2)", COLOR_TEXT)
             elif mode == "MakcuController":
                 self._set_status_indicator("Status: Mouse API connected (MakcuController)", COLOR_TEXT)
+            elif mode == "MakxdMakAPI":
+                self._set_status_indicator("Status: Mouse API connected (MakxdMakAPI)", COLOR_TEXT)
             elif mode == "DHZ":
                 self._set_status_indicator("Status: Mouse API connected (DHZ)", COLOR_TEXT)
             else:
@@ -2875,7 +3027,22 @@ class ViewerApp(ctk.CTk):
                                       float(getattr(config, "normalsmoothfov", 10)),
                                       self._on_config_normal_smoothfov_changed)
             self._add_ads_fov_controls_in_frame(sec_params, is_sec=False)
-        
+
+        elif current_mode == "Flick":
+            self._add_subtitle_in_frame(sec_params, "FLICK PARAMETERS")
+            self._add_slider_in_frame(sec_params, "Strength X", "flick_strength_x", 0.01, 5.0,
+                                      float(getattr(config, "flick_strength_x", 5.0)),
+                                      self._on_flick_strength_x_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Strength Y", "flick_strength_y", 0.01, 5.0,
+                                      float(getattr(config, "flick_strength_y", 5.0)),
+                                      self._on_flick_strength_y_changed, is_float=True)
+            self._add_spacer_in_frame(sec_params)
+            self._add_subtitle_in_frame(sec_params, "FOV")
+            self._add_slider_in_frame(sec_params, "FOV Size", "fovsize", 1, 1000,
+                                      float(getattr(config, "fovsize", 300)),
+                                      self._on_fovsize_changed)
+            self._add_ads_fov_controls_in_frame(sec_params, is_sec=False)
+
         elif current_mode == "Silent":
             self._add_subtitle_in_frame(sec_params, "SILENT PARAMETERS")
             self._add_slider_in_frame(sec_params, "Distance (Multiplier)", "silent_distance", 0.1, 10.0,
@@ -3124,7 +3291,22 @@ class ViewerApp(ctk.CTk):
                                       float(getattr(config, "normalsmoothfov_sec", 20)),
                                       self._on_config_normal_smoothfov_sec_changed)
             self._add_ads_fov_controls_in_frame(sec_params, is_sec=True)
-        
+
+        elif current_mode_sec == "Flick":
+            self._add_subtitle_in_frame(sec_params, "FLICK PARAMETERS")
+            self._add_slider_in_frame(sec_params, "Strength X", "flick_strength_x_sec", 0.01, 5.0,
+                                      float(getattr(config, "flick_strength_x_sec", 5.0)),
+                                      self._on_flick_strength_x_sec_changed, is_float=True)
+            self._add_slider_in_frame(sec_params, "Strength Y", "flick_strength_y_sec", 0.01, 5.0,
+                                      float(getattr(config, "flick_strength_y_sec", 5.0)),
+                                      self._on_flick_strength_y_sec_changed, is_float=True)
+            self._add_spacer_in_frame(sec_params)
+            self._add_subtitle_in_frame(sec_params, "FOV")
+            self._add_slider_in_frame(sec_params, "FOV Size", "fovsize_sec", 1, 1000,
+                                      float(getattr(config, "fovsize_sec", 150)),
+                                      self._on_fovsize_sec_changed)
+            self._add_ads_fov_controls_in_frame(sec_params, is_sec=True)
+
         elif current_mode_sec == "Silent":
             self._add_subtitle_in_frame(sec_params, "SENSITIVITY")
             self._add_slider_in_frame(sec_params, "X-Speed", "normal_x_speed_sec", 0.1, 2000,
@@ -3674,6 +3856,11 @@ class ViewerApp(ctk.CTk):
         else:
             config.trigger_strafe_mode = "off"
 
+    def _show_magnet_trigger_tab(self):
+        from src.ui_tabs.magnet_trigger_tab import build_magnet_trigger_tab
+
+        build_magnet_trigger_tab(self)
+
     def _show_rcs_tab(self):
         """椤ず RCS 瑷疆妯欑堡"""
         self._active_tab_name = "RCS"
@@ -3684,6 +3871,14 @@ class ViewerApp(ctk.CTk):
         self.var_enablercs = tk.BooleanVar(value=getattr(config, "enablercs", False))
         self._add_switch("Enable RCS", self.var_enablercs, self._on_enablercs_changed)
         self._checkbox_vars["enablercs"] = self.var_enablercs
+
+        current_rcs_key = self._ads_binding_to_display(getattr(config, "rcs_keybind", 0))
+        self.rcs_key_bind_button = self._add_bind_capture_row_in_frame(
+            self.content_frame,
+            "Keybind",
+            current_rcs_key,
+            self._start_rcs_key_capture,
+        )
         
         self._add_spacer()
         self._add_subtitle("PARAMETERS")
@@ -5054,13 +5249,37 @@ class ViewerApp(ctk.CTk):
         try:
             from src.utils import mouse as mouse_backend
         except Exception:
-            return False
+            mouse_backend = None
 
         mouse_idx = BUTTON_NAME_TO_IDX.get(str(binding), None)
         try:
-            if mouse_idx is not None:
+            if mouse_backend is not None and mouse_idx is not None:
                 return bool(mouse_backend.is_button_pressed(int(mouse_idx)))
-            return bool(mouse_backend.is_key_pressed(binding))
+            if mouse_backend is not None and mouse_idx is None:
+                return bool(mouse_backend.is_key_pressed(binding))
+        except Exception:
+            pass
+        return self._is_binding_pressed_locally(binding)
+
+    def _is_binding_pressed_locally(self, binding):
+        if USER32 is None:
+            return False
+
+        mouse_idx = BUTTON_NAME_TO_IDX.get(str(binding), None)
+        if mouse_idx is not None:
+            vk = BUTTON_IDX_TO_VK.get(int(mouse_idx))
+            if vk is None:
+                return False
+            try:
+                return bool(USER32.GetAsyncKeyState(int(vk)) & 0x8000)
+            except Exception:
+                return False
+
+        vk = to_vk_code(binding)
+        if vk is None:
+            return False
+        try:
+            return bool(USER32.GetAsyncKeyState(int(vk)) & 0x8000)
         except Exception:
             return False
 
@@ -5073,8 +5292,8 @@ class ViewerApp(ctk.CTk):
             return False
 
     def _get_binding_capture_candidates(self):
-        mode = getattr(config, "mouse_api", "Serial")
-        keyboard_supported = self._supports_keyboard_state(mode)
+        mode = getattr(config, "keyboard_api", "Follow Mouse API")
+        keyboard_supported = bool(self._supports_keyboard_state(mode) or USER32 is not None)
 
         # Keep deterministic order: mouse first, then keyboard.
         candidates = list(BUTTONS.values())
@@ -5115,6 +5334,7 @@ class ViewerApp(ctk.CTk):
             return "PID"
         canonical = {
             "normal": "Normal",
+            "flick": "Flick",
             "silent": "Silent",
             "ncaf": "NCAF",
             "windmouse": "WindMouse",
@@ -5278,6 +5498,76 @@ class ViewerApp(ctk.CTk):
         self._set_bind_button_text(button, "Press key...")
         self.after(30, lambda capture_id=ctx["id"]: self._poll_binding_capture(capture_id))
 
+    def _start_rcs_key_capture(self):
+        config_key = "rcs_keybind"
+        button = getattr(self, "rcs_key_bind_button", None)
+        if button is None:
+            return
+
+        self._cancel_binding_capture()
+
+        candidates, keyboard_supported = self._get_binding_capture_candidates()
+        if not keyboard_supported:
+            self._log_config("Current Input API does not expose keyboard state; capture supports mouse buttons only.")
+
+        prev_states = {binding: bool(self._is_binding_pressed_by_backend(binding)) for binding in candidates}
+        restore_binding = getattr(config, config_key, 0)
+        restore_text = self._ads_binding_to_display(restore_binding)
+
+        ctx = {
+            "id": int(getattr(self, "_binding_capture_id", 0)) + 1,
+            "config_key": config_key,
+            "tracker_key": None,
+            "binding_kind": "aim",
+            "log_label": "RCS Key",
+            "button": button,
+            "restore_text": restore_text,
+            "candidates": candidates,
+            "prev_states": prev_states,
+            "started_at": time.monotonic(),
+            "arm_at": time.monotonic() + 0.35,
+            "timeout_sec": 10.0,
+        }
+        self._binding_capture_id = ctx["id"]
+        self._binding_capture_ctx = ctx
+        self._set_bind_button_text(button, "Press key...")
+        self.after(30, lambda capture_id=ctx["id"]: self._poll_binding_capture(capture_id))
+
+    def _start_magnet_key_capture(self):
+        config_key = "magnet_keybind"
+        button = getattr(self, "magnet_key_bind_button", None)
+        if button is None:
+            return
+
+        self._cancel_binding_capture()
+
+        candidates, keyboard_supported = self._get_binding_capture_candidates()
+        if not keyboard_supported:
+            self._log_config("Current Input API does not expose keyboard state; capture supports mouse buttons only.")
+
+        prev_states = {binding: bool(self._is_binding_pressed_by_backend(binding)) for binding in candidates}
+        restore_binding = getattr(config, config_key, 0)
+        restore_text = self._ads_binding_to_display(restore_binding)
+
+        ctx = {
+            "id": int(getattr(self, "_binding_capture_id", 0)) + 1,
+            "config_key": config_key,
+            "tracker_key": None,
+            "binding_kind": "aim",
+            "log_label": "Magnet Key",
+            "button": button,
+            "restore_text": restore_text,
+            "candidates": candidates,
+            "prev_states": prev_states,
+            "started_at": time.monotonic(),
+            "arm_at": time.monotonic() + 0.35,
+            "timeout_sec": 10.0,
+        }
+        self._binding_capture_id = ctx["id"]
+        self._binding_capture_ctx = ctx
+        self._set_bind_button_text(button, "Press key...")
+        self.after(30, lambda capture_id=ctx["id"]: self._poll_binding_capture(capture_id))
+
     def _poll_binding_capture(self, capture_id):
         ctx = getattr(self, "_binding_capture_ctx", None)
         if not isinstance(ctx, dict):
@@ -5308,7 +5598,7 @@ class ViewerApp(ctk.CTk):
 
         if selected_binding is not None:
             config_key = str(ctx.get("config_key", "ads_key"))
-            tracker_key = str(ctx.get("tracker_key", "ads_key"))
+            tracker_key = ctx.get("tracker_key")
             binding_kind = str(ctx.get("binding_kind", "ads")).strip().lower()
             if binding_kind in {"aim", "trigger"}:
                 stored_value = self._normalize_aim_binding_for_config(selected_binding)
@@ -5316,7 +5606,7 @@ class ViewerApp(ctk.CTk):
                 stored_value = selected_binding
 
             setattr(config, config_key, stored_value)
-            if hasattr(self, "tracker"):
+            if tracker_key and hasattr(self, "tracker"):
                 setattr(self.tracker, tracker_key, stored_value)
 
             display_name = self._ads_binding_to_display(stored_value)
@@ -5480,6 +5770,29 @@ class ViewerApp(ctk.CTk):
                             "toggle": "Toggle",
                         }
                         self._set_option_value(k, trigger_activation_display.get(str(v), "Hold to Enable"))
+                    elif k == "magnet_activation_type":
+                        magnet_activation_display = {
+                            "hold_enable": "Hold to Enable",
+                            "hold_disable": "Hold to Disable",
+                            "toggle": "Toggle",
+                        }
+                        self._set_option_value(k, magnet_activation_display.get(str(v), "Hold to Enable"))
+                    elif k == "magnet_mode":
+                        self._set_option_value(k, self._aim_mode_value_to_display(v))
+                    elif k == "magnet_trigger_type":
+                        trigger_display = {
+                            "current": "Classic Trigger",
+                            "rgb": "RGB Trigger",
+                        }
+                        self._set_option_value(k, trigger_display.get(str(v).strip().lower(), "Classic Trigger"))
+                    elif k == "magnet_rgb_color_profile":
+                        rgb_display = {
+                            "red": "Red",
+                            "yellow": "Yellow",
+                            "purple": "Purple",
+                            "custom": "Custom",
+                        }
+                        self._set_option_value(k, rgb_display.get(str(v).strip().lower(), "Purple"))
                     elif k == "trigger_strafe_mode":
                         strafe_mode_display = {
                             "off": "Off",
@@ -5504,6 +5817,10 @@ class ViewerApp(ctk.CTk):
                     self._set_bind_button_text(self.ads_key_bind_button_sec, self._ads_binding_to_display(v))
                 elif k == "trigger_ads_key" and hasattr(self, "trigger_ads_key_bind_button"):
                     self._set_bind_button_text(self.trigger_ads_key_bind_button, self._ads_binding_to_display(v))
+                elif k == "rcs_keybind" and hasattr(self, "rcs_key_bind_button"):
+                    self._set_bind_button_text(self.rcs_key_bind_button, self._ads_binding_to_display(v))
+                elif k == "magnet_keybind" and hasattr(self, "magnet_key_bind_button"):
+                    self._set_bind_button_text(self.magnet_key_bind_button, self._ads_binding_to_display(v))
 
                 if k == "serial_auto_switch_4m":
                     self.saved_serial_auto_switch_4m = bool(v)
@@ -5557,6 +5874,9 @@ class ViewerApp(ctk.CTk):
                     if not self._supports_trigger_strafe_ui(getattr(config, "mouse_api", "Serial")):
                         config.trigger_strafe_mode = "off"
                     self._show_tb_tab()
+            if str(getattr(self, "_active_tab_name", "")) == "Magnet Trigger":
+                if any(str(key).startswith("magnet_") for key in data):
+                    self._show_magnet_trigger_tab()
             if str(getattr(self, "_active_tab_name", "")) == "Main Aimbot":
                 if (
                     "mode" in data
@@ -6579,6 +6899,8 @@ class ViewerApp(ctk.CTk):
             return "KmboxA"
         if mode_norm == "dhz":
             return "DHZ"
+        if mode_norm in ("makxdmakapi", "makxd_makapi", "makxd-makapi", "makxd makapi", "makxd_mak", "makxd-mak"):
+            return "MakxdMakAPI"
         if mode_norm in ("makv2binary", "makv2_binary", "makv2-binary", "binary"):
             return "MakV2Binary"
         if mode_norm in ("makv2", "mak_v2", "mak-v2"):
@@ -6593,6 +6915,15 @@ class ViewerApp(ctk.CTk):
             return "Ferrum"
         return "Serial"
 
+    def _normalize_keyboard_api_name(self, mode):
+        raw = str(mode or "").strip()
+        lowered = raw.lower()
+        if lowered in {"", "follow", "follow mouse api", "follow_mouse_api", "follow-mouse-api"}:
+            return "Follow Mouse API"
+        if lowered == "serial (makcu)":
+            return "Serial (Makcu)"
+        return self._normalize_mouse_api_name(raw)
+
     def _supports_trigger_strafe_ui(self, mode=None) -> bool:
         selected_mode = mode if mode is not None else getattr(config, "mouse_api", "Serial")
         try:
@@ -6604,7 +6935,9 @@ class ViewerApp(ctk.CTk):
             return normalized in {"SendInput", "Net", "KmboxA", "DHZ", "Ferrum", "MakcuController"}
 
     def _supports_keyboard_state(self, mode=None) -> bool:
-        selected_mode = mode if mode is not None else getattr(config, "mouse_api", "Serial")
+        selected_mode = mode if mode is not None else getattr(config, "keyboard_api", "Follow Mouse API")
+        if str(selected_mode).strip().lower() in {"", "follow", "follow mouse api", "follow_mouse_api", "follow-mouse-api"}:
+            selected_mode = getattr(config, "mouse_api", "Serial")
         try:
             from src.utils import mouse as mouse_backend
 
@@ -6630,8 +6963,10 @@ class ViewerApp(ctk.CTk):
 
     def _build_hardware_details_text(self, mode: str, connected: bool) -> str:
         auto_connect = bool(getattr(config, "auto_connect_mouse_api", False))
+        keyboard_api = str(getattr(config, "keyboard_api", "Follow Mouse API"))
         details = [
             f"Backend: {mode}",
+            f"Keyboard API: {keyboard_api}",
             f"Connected: {'Yes' if connected else 'No'}",
             f"Auto Connect On Startup: {'Yes' if auto_connect else 'No'}",
         ]
@@ -6693,6 +7028,19 @@ class ViewerApp(ctk.CTk):
             cfg_baud = str(getattr(config, "makv2_baud", 4000000))
             details.append(f"Port: {cfg_port}")
             details.append(f"Baud: {cfg_baud}")
+            try:
+                serial_dev = getattr(mouse_state, "makcu", None)
+                if serial_dev is not None:
+                    details.append(f"Active Port: {getattr(serial_dev, 'port', cfg_port)}")
+                    details.append(f"Active Baud: {getattr(serial_dev, 'baudrate', cfg_baud)}")
+            except Exception:
+                pass
+        elif mode == "MakxdMakAPI":
+            cfg_port = str(getattr(config, "makxd_mak_port", "") or "auto")
+            cfg_baud = str(getattr(config, "makxd_mak_baud", 115200))
+            details.append(f"Port: {cfg_port}")
+            details.append(f"Baud: {cfg_baud}")
+            details.append("Protocol: Binary opcode surface")
             try:
                 serial_dev = getattr(mouse_state, "makcu", None)
                 if serial_dev is not None:
@@ -6982,6 +7330,12 @@ class ViewerApp(ctk.CTk):
     def _on_normal_y_speed_changed(self, val): 
         config.normal_y_speed = val
         self.tracker.normal_y_speed = val
+
+    def _on_flick_strength_x_changed(self, val):
+        config.flick_strength_x = float(val)
+
+    def _on_flick_strength_y_changed(self, val):
+        config.flick_strength_y = float(val)
     
     def _on_silent_distance_changed(self, val):
         config.silent_distance = val
@@ -7128,7 +7482,59 @@ class ViewerApp(ctk.CTk):
         if hasattr(self, "tracker"):
             self.tracker.trigger_ads_key_type = config.trigger_ads_key_type
         self._log_config(f"Trigger ADS Key Type: {val}")
-    
+
+    def _on_enable_magnet_trigger_changed(self):
+        config.enable_magnet_trigger = self.var_enable_magnet_trigger.get()
+
+    def _on_magnet_fov_changed(self, val):
+        config.magnet_fov = float(val)
+
+    def _on_magnet_pull_x_changed(self, val):
+        config.magnet_pull_x = float(val)
+
+    def _on_magnet_pull_y_changed(self, val):
+        config.magnet_pull_y = float(val)
+
+    def _on_magnet_fire_radius_changed(self, val):
+        config.magnet_fire_radius = float(val)
+
+    def _on_magnet_cooldown_ms_changed(self, val):
+        config.magnet_cooldown_ms = float(val)
+
+    def _on_magnet_activation_type_selected(self, val):
+        activation_map = {
+            "Hold to Enable": "hold_enable",
+            "Hold to Disable": "hold_disable",
+            "Toggle": "toggle",
+        }
+        config.magnet_activation_type = activation_map.get(str(val), "hold_enable")
+        self._log_config(f"Magnet Trigger Mode: {val}")
+
+    def _on_magnet_mode_selected(self, val):
+        config.magnet_mode = self._aim_mode_display_to_value(val)
+        if str(getattr(self, "_active_tab_name", "")) == "Magnet Trigger":
+            self._show_magnet_trigger_tab()
+
+    def _on_magnet_trigger_type_selected(self, val):
+        trigger_map = {
+            "Classic Trigger": "current",
+            "RGB Trigger": "rgb",
+        }
+        config.magnet_trigger_type = trigger_map.get(str(val), "current")
+        if str(getattr(self, "_active_tab_name", "")) == "Magnet Trigger":
+            self._show_magnet_trigger_tab()
+
+    def _on_magnet_rgb_color_profile_selected(self, val):
+        profile_map = {
+            "Red": "red",
+            "Yellow": "yellow",
+            "Purple": "purple",
+            "Custom": "custom",
+        }
+        config.magnet_rgb_color_profile = profile_map.get(str(val), "purple")
+        if str(getattr(self, "_active_tab_name", "")) == "Magnet Trigger":
+            self._show_magnet_trigger_tab()
+
     def _on_tbhold_changed(self, val):
         config.tbhold = val
         self.tracker.tbhold = val
@@ -7338,7 +7744,13 @@ class ViewerApp(ctk.CTk):
     def _on_config_normal_smoothfov_sec_changed(self, val): 
         config.normalsmoothfov_sec = val
         self.tracker.normalsmoothfov_sec = val
-    
+
+    def _on_flick_strength_x_sec_changed(self, val):
+        config.flick_strength_x_sec = float(val)
+
+    def _on_flick_strength_y_sec_changed(self, val):
+        config.flick_strength_y_sec = float(val)
+
     def _on_fovsize_sec_changed(self, val): 
         config.fovsize_sec = val
         self.tracker.fovsize_sec = val

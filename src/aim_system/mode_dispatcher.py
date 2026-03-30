@@ -1,8 +1,9 @@
-from . import mode_bezier, mode_ncaf, mode_normal, mode_pid, mode_silent, mode_windmouse
+from . import mode_bezier, mode_flick, mode_ncaf, mode_normal, mode_pid, mode_silent, mode_windmouse
 
 
 _MODE_HANDLERS = {
     "Normal": mode_normal.apply,
+    "Flick": mode_flick.apply,
     "Silent": mode_silent.apply,
     "NCAF": mode_ncaf.apply,
     "WindMouse": mode_windmouse.apply,
@@ -15,6 +16,7 @@ def normalize_mode(mode):
     raw = str(mode or "").strip().lower()
     mapping = {
         "normal": "Normal",
+        "flick": "Flick",
         "silent": "Silent",
         "ncaf": "NCAF",
         "windmouse": "WindMouse",
