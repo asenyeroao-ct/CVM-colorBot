@@ -1,5 +1,5 @@
 {
-    "version": "2.10.0",
+    "version": "2.10.1",
     "release_date": "2026-03-31",
-    "changelog": "Added Ferrum keyboard/backend configuration support and refreshed Hardware API UI emphasis."
+    "changelog": "Refined Hardware API styling to use stronger gray-scale emphasis within the existing dark theme."
 }
