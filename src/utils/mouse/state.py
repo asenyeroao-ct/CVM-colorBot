@@ -9,6 +9,9 @@ button_states_lock = threading.Lock()
 is_connected = False
 active_backend = "Serial"
 last_connect_error = ""
+keyboard_is_connected = False
+keyboard_active_backend = "Follow Mouse API"
+keyboard_last_connect_error = ""
 
 kmnet_module = None
 kmboxa_module = None
@@ -39,6 +42,13 @@ def set_connected(connected: bool, backend: str = None):
     is_connected = bool(connected)
     if backend is not None:
         active_backend = backend
+
+
+def set_keyboard_connected(connected: bool, backend: str = None):
+    global keyboard_is_connected, keyboard_active_backend
+    keyboard_is_connected = bool(connected)
+    if backend is not None:
+        keyboard_active_backend = backend
 
 
 def reset_button_states():

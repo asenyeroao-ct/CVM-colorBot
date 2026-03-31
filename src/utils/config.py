@@ -83,6 +83,24 @@ class Config:
         self.dhz_ip = "192.168.2.188"
         self.dhz_port = "5000"
         self.dhz_random = 0
+        self.ferrum_device_path = ""
+        self.ferrum_connection_type = "auto"
+        self.ferrum_mode = "KmAPI"
+        self.ferrum_net_ip = "192.168.2.188"
+        self.ferrum_net_port = "6234"
+        self.ferrum_net_uuid = ""
+        self.ferrum_dhz_ip = "192.168.8.88"
+        self.ferrum_dhz_port = "5000"
+        self.ferrum_dhz_random = 0
+        self.keyboard_ferrum_device_path = ""
+        self.keyboard_ferrum_connection_type = "auto"
+        self.keyboard_ferrum_mode = "KmAPI"
+        self.keyboard_ferrum_net_ip = "192.168.2.188"
+        self.keyboard_ferrum_net_port = "6234"
+        self.keyboard_ferrum_net_uuid = ""
+        self.keyboard_ferrum_dhz_ip = "192.168.8.88"
+        self.keyboard_ferrum_dhz_port = "5000"
+        self.keyboard_ferrum_dhz_random = 0
         # --- Aimbot Activation Type ---
         self.aimbot_activation_type = "hold_enable"  # Main Aimbot: hold_enable, hold_disable, toggle, use_enable
         self.aimbot_activation_type_sec = "hold_enable"  # Sec Aimbot: hold_enable, hold_disable, toggle, use_enable
@@ -481,6 +499,24 @@ class Config:
             "dhz_ip": self.dhz_ip,
             "dhz_port": self.dhz_port,
             "dhz_random": self.dhz_random,
+            "ferrum_device_path": self.ferrum_device_path,
+            "ferrum_connection_type": self.ferrum_connection_type,
+            "ferrum_mode": self.ferrum_mode,
+            "ferrum_net_ip": self.ferrum_net_ip,
+            "ferrum_net_port": self.ferrum_net_port,
+            "ferrum_net_uuid": self.ferrum_net_uuid,
+            "ferrum_dhz_ip": self.ferrum_dhz_ip,
+            "ferrum_dhz_port": self.ferrum_dhz_port,
+            "ferrum_dhz_random": self.ferrum_dhz_random,
+            "keyboard_ferrum_device_path": self.keyboard_ferrum_device_path,
+            "keyboard_ferrum_connection_type": self.keyboard_ferrum_connection_type,
+            "keyboard_ferrum_mode": self.keyboard_ferrum_mode,
+            "keyboard_ferrum_net_ip": self.keyboard_ferrum_net_ip,
+            "keyboard_ferrum_net_port": self.keyboard_ferrum_net_port,
+            "keyboard_ferrum_net_uuid": self.keyboard_ferrum_net_uuid,
+            "keyboard_ferrum_dhz_ip": self.keyboard_ferrum_dhz_ip,
+            "keyboard_ferrum_dhz_port": self.keyboard_ferrum_dhz_port,
+            "keyboard_ferrum_dhz_random": self.keyboard_ferrum_dhz_random,
             "aimbot_activation_type": self.aimbot_activation_type,
             "aimbot_activation_type_sec": self.aimbot_activation_type_sec,
             
@@ -809,6 +845,32 @@ class Config:
             self.makxd_mak_baud = int(getattr(self, "makxd_mak_baud", 115200))
         except Exception:
             self.makxd_mak_baud = 115200
+        self.ferrum_device_path = str(getattr(self, "ferrum_device_path", "")).strip()
+        self.ferrum_connection_type = str(getattr(self, "ferrum_connection_type", "auto")).strip() or "auto"
+        self.ferrum_mode = str(getattr(self, "ferrum_mode", "KmAPI")).strip() or "KmAPI"
+        self.ferrum_net_ip = str(getattr(self, "ferrum_net_ip", "192.168.2.188")).strip() or "192.168.2.188"
+        self.ferrum_net_port = str(getattr(self, "ferrum_net_port", "6234")).strip() or "6234"
+        self.ferrum_net_uuid = str(getattr(self, "ferrum_net_uuid", "")).strip()
+        self.ferrum_dhz_ip = str(getattr(self, "ferrum_dhz_ip", "192.168.8.88")).strip() or "192.168.8.88"
+        self.ferrum_dhz_port = str(getattr(self, "ferrum_dhz_port", "5000")).strip() or "5000"
+        try:
+            self.ferrum_dhz_random = int(getattr(self, "ferrum_dhz_random", 0))
+        except Exception:
+            self.ferrum_dhz_random = 0
+        self.keyboard_ferrum_device_path = str(getattr(self, "keyboard_ferrum_device_path", "")).strip()
+        self.keyboard_ferrum_connection_type = (
+            str(getattr(self, "keyboard_ferrum_connection_type", "auto")).strip() or "auto"
+        )
+        self.keyboard_ferrum_mode = str(getattr(self, "keyboard_ferrum_mode", "KmAPI")).strip() or "KmAPI"
+        self.keyboard_ferrum_net_ip = str(getattr(self, "keyboard_ferrum_net_ip", "192.168.2.188")).strip() or "192.168.2.188"
+        self.keyboard_ferrum_net_port = str(getattr(self, "keyboard_ferrum_net_port", "6234")).strip() or "6234"
+        self.keyboard_ferrum_net_uuid = str(getattr(self, "keyboard_ferrum_net_uuid", "")).strip()
+        self.keyboard_ferrum_dhz_ip = str(getattr(self, "keyboard_ferrum_dhz_ip", "192.168.8.88")).strip() or "192.168.8.88"
+        self.keyboard_ferrum_dhz_port = str(getattr(self, "keyboard_ferrum_dhz_port", "5000")).strip() or "5000"
+        try:
+            self.keyboard_ferrum_dhz_random = int(getattr(self, "keyboard_ferrum_dhz_random", 0))
+        except Exception:
+            self.keyboard_ferrum_dhz_random = 0
         self.arduino_16_bit_mouse = bool(getattr(self, "arduino_16_bit_mouse", True))
         self.ads_fov_enabled = bool(getattr(self, "ads_fov_enabled", False))
         self.ads_fov_enabled_sec = bool(getattr(self, "ads_fov_enabled_sec", False))

@@ -75,6 +75,17 @@ def _apply_theme_preset(theme_name):
 
 _apply_theme_preset("neon")
 
+# Hardware API 專用 accent colors / dedicated emphasis colors for Hardware API widgets
+COLOR_HARDWARE_PANEL = "#091523"
+COLOR_HARDWARE_PANEL_BORDER = "#163A63"
+COLOR_HARDWARE_INPUT_BG = "#0C1C31"
+COLOR_HARDWARE_INPUT_BORDER = "#245C97"
+COLOR_HARDWARE_INPUT_HOVER = "#123055"
+COLOR_HARDWARE_BUTTON_BG = "#10233B"
+COLOR_HARDWARE_BUTTON_HOVER = "#18375B"
+COLOR_HARDWARE_BUTTON_TEXT = "#D7E9FF"
+COLOR_HARDWARE_DROPDOWN_BG = "#0A182A"
+
 CVM_CONFIG_COMMENT_KEY = "_comment"
 CVM_CONFIG_COMMENT_VALUE = "This is CVM colorBot config."
 CF_HDROP = 15
@@ -315,10 +326,29 @@ class ViewerApp(ctk.CTk):
         self.saved_dhz_random = str(getattr(config, "dhz_random", 0))
         self.saved_ferrum_device_path = str(getattr(config, "ferrum_device_path", ""))
         self.saved_ferrum_connection_type = str(getattr(config, "ferrum_connection_type", "auto"))
+        self.saved_ferrum_mode = str(getattr(config, "ferrum_mode", "KmAPI"))
+        self.saved_ferrum_net_ip = str(getattr(config, "ferrum_net_ip", "192.168.2.188"))
+        self.saved_ferrum_net_port = str(getattr(config, "ferrum_net_port", "6234"))
+        self.saved_ferrum_net_uuid = str(getattr(config, "ferrum_net_uuid", ""))
+        self.saved_ferrum_dhz_ip = str(getattr(config, "ferrum_dhz_ip", "192.168.8.88"))
+        self.saved_ferrum_dhz_port = str(getattr(config, "ferrum_dhz_port", "5000"))
+        self.saved_ferrum_dhz_random = str(getattr(config, "ferrum_dhz_random", 0))
+        self.saved_keyboard_ferrum_device_path = str(getattr(config, "keyboard_ferrum_device_path", ""))
+        self.saved_keyboard_ferrum_connection_type = str(
+            getattr(config, "keyboard_ferrum_connection_type", "auto")
+        )
+        self.saved_keyboard_ferrum_mode = str(getattr(config, "keyboard_ferrum_mode", "KmAPI"))
+        self.saved_keyboard_ferrum_net_ip = str(getattr(config, "keyboard_ferrum_net_ip", "192.168.2.188"))
+        self.saved_keyboard_ferrum_net_port = str(getattr(config, "keyboard_ferrum_net_port", "6234"))
+        self.saved_keyboard_ferrum_net_uuid = str(getattr(config, "keyboard_ferrum_net_uuid", ""))
+        self.saved_keyboard_ferrum_dhz_ip = str(getattr(config, "keyboard_ferrum_dhz_ip", "192.168.8.88"))
+        self.saved_keyboard_ferrum_dhz_port = str(getattr(config, "keyboard_ferrum_dhz_port", "5000"))
+        self.saved_keyboard_ferrum_dhz_random = str(getattr(config, "keyboard_ferrum_dhz_random", 0))
         self.saved_auto_connect_mouse_api = bool(getattr(config, "auto_connect_mouse_api", False))
         self._mouse_api_connecting = False
         self._mouse_api_connect_job_id = 0
         self._mouse_api_connect_timeout_ms = 12000
+        self._keyboard_api_connecting = False
         self._serial_baud_switching = False
         
         # --- Build layout ---
@@ -816,20 +846,7 @@ class ViewerApp(ctk.CTk):
 
         # -- HARDWARE API (collapsible) --
         sec_hardware = self._create_collapsible_section(self.content_frame, "Hardware API", initially_open=True)
-        self._add_subtitle_in_frame(sec_hardware, "MOUSE")
-        self.mouse_api_option = self._add_option_row_in_frame(
-            sec_hardware,
-            "Input API",
-            ["Serial (Makcu)", "Arduino", "SendInput", "Net", "KmboxA", "MakV2", "MakcuController", "MakxdMakAPI", "MakV2Binary", "DHZ", "Ferrum"],
-            self._on_mouse_api_changed,
-        )
         self.var_auto_connect_mouse_api = tk.BooleanVar(value=bool(getattr(config, "auto_connect_mouse_api", False)))
-        self._add_switch_in_frame(
-            sec_hardware,
-            "Auto Connect Mouse API On Startup",
-            self.var_auto_connect_mouse_api,
-            self._on_auto_connect_mouse_api_changed,
-        )
         current_mouse_api = getattr(config, "mouse_api", "Serial")
         current_mouse_api_norm = str(current_mouse_api).strip().lower()
         if current_mouse_api_norm == "net":
@@ -854,11 +871,8 @@ class ViewerApp(ctk.CTk):
             current_mouse_api = "Ferrum"
         else:
             current_mouse_api = "Serial (Makcu)"
-        self.mouse_api_option.set(current_mouse_api)
         self.saved_mouse_api = current_mouse_api
 
-        self._add_spacer_in_frame(sec_hardware)
-        self._add_subtitle_in_frame(sec_hardware, "KEYBOARD")
         keyboard_options = [
             "Follow Mouse API",
             "SendInput",
@@ -872,25 +886,9 @@ class ViewerApp(ctk.CTk):
             "DHZ",
             "Ferrum",
         ]
-        self.keyboard_api_option = self._add_option_row_in_frame(
-            sec_hardware,
-            "Input API",
-            keyboard_options,
-            self._on_keyboard_api_changed,
-        )
         current_keyboard_api = str(getattr(config, "keyboard_api", "Follow Mouse API")).strip()
         normalized_keyboard_api = self._normalize_keyboard_api_name(current_keyboard_api)
-        self.keyboard_api_option.set(normalized_keyboard_api)
         self.saved_keyboard_api = normalized_keyboard_api
-        ctk.CTkLabel(
-            sec_hardware,
-            text="Keyboard API is independent for keybind state and keyboard output. SendInput works without changing the active mouse backend.",
-            font=("Roboto", 9),
-            text_color=COLOR_TEXT_DIM,
-            justify="left",
-            wraplength=720,
-            anchor="w",
-        ).pack(fill="x", pady=(2, 8))
 
         serial_mode = str(getattr(config, "serial_port_mode", self.saved_serial_port_mode)).strip().lower()
         self.saved_serial_port_mode = "Manual" if serial_mode == "manual" else "Auto"
@@ -930,12 +928,109 @@ class ViewerApp(ctk.CTk):
         self.saved_dhz_random = str(getattr(config, "dhz_random", self.saved_dhz_random))
         self.saved_ferrum_device_path = str(getattr(config, "ferrum_device_path", self.saved_ferrum_device_path))
         self.saved_ferrum_connection_type = str(getattr(config, "ferrum_connection_type", self.saved_ferrum_connection_type))
+        self.saved_ferrum_mode = str(getattr(config, "ferrum_mode", self.saved_ferrum_mode))
+        self.saved_ferrum_net_ip = str(getattr(config, "ferrum_net_ip", self.saved_ferrum_net_ip))
+        self.saved_ferrum_net_port = str(getattr(config, "ferrum_net_port", self.saved_ferrum_net_port))
+        self.saved_ferrum_net_uuid = str(getattr(config, "ferrum_net_uuid", self.saved_ferrum_net_uuid))
+        self.saved_ferrum_dhz_ip = str(getattr(config, "ferrum_dhz_ip", self.saved_ferrum_dhz_ip))
+        self.saved_ferrum_dhz_port = str(getattr(config, "ferrum_dhz_port", self.saved_ferrum_dhz_port))
+        self.saved_ferrum_dhz_random = str(getattr(config, "ferrum_dhz_random", self.saved_ferrum_dhz_random))
+        self.saved_keyboard_ferrum_device_path = str(
+            getattr(config, "keyboard_ferrum_device_path", self.saved_keyboard_ferrum_device_path)
+        )
+        self.saved_keyboard_ferrum_connection_type = str(
+            getattr(config, "keyboard_ferrum_connection_type", self.saved_keyboard_ferrum_connection_type)
+        )
+        self.saved_keyboard_ferrum_mode = str(
+            getattr(config, "keyboard_ferrum_mode", self.saved_keyboard_ferrum_mode)
+        )
+        self.saved_keyboard_ferrum_net_ip = str(
+            getattr(config, "keyboard_ferrum_net_ip", self.saved_keyboard_ferrum_net_ip)
+        )
+        self.saved_keyboard_ferrum_net_port = str(
+            getattr(config, "keyboard_ferrum_net_port", self.saved_keyboard_ferrum_net_port)
+        )
+        self.saved_keyboard_ferrum_net_uuid = str(
+            getattr(config, "keyboard_ferrum_net_uuid", self.saved_keyboard_ferrum_net_uuid)
+        )
+        self.saved_keyboard_ferrum_dhz_ip = str(
+            getattr(config, "keyboard_ferrum_dhz_ip", self.saved_keyboard_ferrum_dhz_ip)
+        )
+        self.saved_keyboard_ferrum_dhz_port = str(
+            getattr(config, "keyboard_ferrum_dhz_port", self.saved_keyboard_ferrum_dhz_port)
+        )
+        self.saved_keyboard_ferrum_dhz_random = str(
+            getattr(config, "keyboard_ferrum_dhz_random", self.saved_keyboard_ferrum_dhz_random)
+        )
         self.saved_auto_connect_mouse_api = bool(getattr(config, "auto_connect_mouse_api", self.saved_auto_connect_mouse_api))
 
-        self._add_spacer_in_frame(sec_hardware)
-        self.hardware_content_frame = ctk.CTkFrame(sec_hardware, fg_color="transparent")
-        self.hardware_content_frame.pack(fill="x", pady=5)
+        self.mouse_hardware_frame = ctk.CTkFrame(
+            sec_hardware,
+            fg_color=COLOR_HARDWARE_PANEL,
+            corner_radius=12,
+            border_width=1,
+            border_color=COLOR_HARDWARE_PANEL_BORDER,
+        )
+        self.mouse_hardware_frame.pack(fill="x", pady=(2, 8))
+        ctk.CTkLabel(
+            self.mouse_hardware_frame,
+            text="Mouse Connection",
+            font=("Roboto", 12, "bold"),
+            text_color=COLOR_TEXT,
+            anchor="w",
+        ).pack(fill="x", padx=12, pady=(10, 2))
+        self.mouse_api_option = self._add_hardware_option_row_in_frame(
+            self.mouse_hardware_frame,
+            "Input API",
+            ["Serial (Makcu)", "Arduino", "SendInput", "Net", "KmboxA", "MakV2", "MakcuController", "MakxdMakAPI", "MakV2Binary", "DHZ", "Ferrum"],
+            self._on_mouse_api_changed,
+        )
+        self.mouse_api_option.set(current_mouse_api)
+        self._add_switch_in_frame(
+            self.mouse_hardware_frame,
+            "Auto Connect Mouse API On Startup",
+            self.var_auto_connect_mouse_api,
+            self._on_auto_connect_mouse_api_changed,
+        )
+        self.mouse_content_frame = ctk.CTkFrame(self.mouse_hardware_frame, fg_color="transparent")
+        self.mouse_content_frame.pack(fill="x", padx=12, pady=(0, 10))
+
+        self.keyboard_hardware_frame = ctk.CTkFrame(
+            sec_hardware,
+            fg_color=COLOR_HARDWARE_PANEL,
+            corner_radius=12,
+            border_width=1,
+            border_color=COLOR_HARDWARE_PANEL_BORDER,
+        )
+        self.keyboard_hardware_frame.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(
+            self.keyboard_hardware_frame,
+            text="Keyboard Connection",
+            font=("Roboto", 12, "bold"),
+            text_color=COLOR_TEXT,
+            anchor="w",
+        ).pack(fill="x", padx=12, pady=(10, 2))
+        self.keyboard_api_option = self._add_hardware_option_row_in_frame(
+            self.keyboard_hardware_frame,
+            "Input API",
+            keyboard_options,
+            self._on_keyboard_api_changed,
+        )
+        self.keyboard_api_option.set(normalized_keyboard_api)
+        ctk.CTkLabel(
+            self.keyboard_hardware_frame,
+            text="Keyboard API is independent for keybind state and keyboard output. SendInput works without changing the active mouse backend.",
+            font=("Roboto", 9),
+            text_color=COLOR_TEXT_DIM,
+            justify="left",
+            wraplength=720,
+            anchor="w",
+        ).pack(fill="x", padx=12, pady=(2, 8))
+        self.keyboard_content_frame = ctk.CTkFrame(self.keyboard_hardware_frame, fg_color="transparent")
+        self.keyboard_content_frame.pack(fill="x", padx=12, pady=(0, 10))
+
         self._update_mouse_api_ui()
+        self._update_keyboard_api_ui()
         
         # 鈹€鈹€ CAPTURE CONTROLS (collapsible) 鈹€鈹€
         sec_capture = self._create_collapsible_section(self.content_frame, "Capture Controls", initially_open=True)
@@ -1184,10 +1279,10 @@ class ViewerApp(ctk.CTk):
 
     def _update_mouse_api_ui(self):
         """鏍规摎閬告搰鐨勬粦榧?API 鏇存柊 Hardware API 鍗€濉娿€?"""
-        if not hasattr(self, "hardware_content_frame") or not self.hardware_content_frame.winfo_exists():
+        if not hasattr(self, "mouse_content_frame") or not self.mouse_content_frame.winfo_exists():
             return
 
-        for widget in self.hardware_content_frame.winfo_children():
+        for widget in self.mouse_content_frame.winfo_children():
             widget.destroy()
 
         mode = "Serial"
@@ -1221,17 +1316,17 @@ class ViewerApp(ctk.CTk):
 
         if mode == "Serial":
             tip = ctk.CTkLabel(
-                self.hardware_content_frame,
+                self.mouse_content_frame,
                 text="Serial API (MAKCU/CH34x)",
                 font=("Roboto", 10),
                 text_color=COLOR_TEXT_DIM,
             )
             tip.pack(anchor="w", pady=(0, 8))
 
-            mode_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            mode_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             mode_frame.pack(fill="x", pady=3)
             ctk.CTkLabel(mode_frame, text="COM Mode", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-            self.serial_mode_option = self._add_option_menu(
+            self.serial_mode_option = self._add_hardware_option_menu(
                 ["Auto", "Manual"],
                 self._on_serial_mode_selected,
                 parent=mode_frame,
@@ -1242,16 +1337,10 @@ class ViewerApp(ctk.CTk):
             self.serial_mode_option.set(current_serial_mode)
 
             if current_serial_mode == "Manual":
-                port_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+                port_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
                 port_frame.pack(fill="x", pady=3)
                 ctk.CTkLabel(port_frame, text="COM Port", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-                self.serial_port_entry = ctk.CTkEntry(
-                    port_frame,
-                    fg_color=COLOR_SURFACE,
-                    border_width=0,
-                    text_color=COLOR_TEXT,
-                    width=170,
-                )
+                self.serial_port_entry = self._create_hardware_entry(port_frame)
                 self.serial_port_entry.pack(side="right")
                 self.serial_port_entry.insert(0, self.saved_serial_port)
                 self.serial_port_entry.bind("<KeyRelease>", self._on_serial_port_changed)
@@ -1259,67 +1348,55 @@ class ViewerApp(ctk.CTk):
 
             self.var_serial_auto_switch_4m = tk.BooleanVar(value=bool(self.saved_serial_auto_switch_4m))
             self._add_switch_in_frame(
-                self.hardware_content_frame,
+                self.mouse_content_frame,
                 "Auto Switch Serial to 4M On Startup",
                 self.var_serial_auto_switch_4m,
                 self._on_serial_auto_switch_4m_changed,
             )
 
-            btn_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=5)
-            self._add_text_button(btn_frame, "CONNECT SERIAL", lambda: self._connect_mouse_api("Serial")).pack(side="left")
-            self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
-            self._add_text_button(btn_frame, "SWITCH TO 4M", self._switch_serial_to_4m).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "CONNECT SERIAL", lambda: self._connect_mouse_api("Serial")).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "SWITCH TO 4M", self._switch_serial_to_4m).pack(side="left")
             return
 
         if mode == "Arduino":
             tip = ctk.CTkLabel(
-                self.hardware_content_frame,
+                self.mouse_content_frame,
                 text="Arduino API (serial c/p/r/mX,Y newline protocol)",
                 font=("Roboto", 10),
                 text_color=COLOR_TEXT_DIM,
             )
             tip.pack(anchor="w", pady=(0, 8))
 
-            port_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            port_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             port_frame.pack(fill="x", pady=3)
             ctk.CTkLabel(port_frame, text="COM Port (optional)", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-            self.arduino_port_entry = ctk.CTkEntry(
-                port_frame,
-                fg_color=COLOR_SURFACE,
-                border_width=0,
-                text_color=COLOR_TEXT,
-                width=170,
-            )
+            self.arduino_port_entry = self._create_hardware_entry(port_frame)
             self.arduino_port_entry.pack(side="right")
             self.arduino_port_entry.insert(0, self.saved_arduino_port)
             self.arduino_port_entry.bind("<KeyRelease>", self._on_arduino_port_changed)
             self.arduino_port_entry.bind("<FocusOut>", self._on_arduino_port_changed)
 
-            baud_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            baud_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             baud_frame.pack(fill="x", pady=3)
             ctk.CTkLabel(baud_frame, text="Baud", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-            self.arduino_baud_entry = ctk.CTkEntry(
-                baud_frame,
-                fg_color=COLOR_SURFACE,
-                border_width=0,
-                text_color=COLOR_TEXT,
-                width=170,
-            )
+            self.arduino_baud_entry = self._create_hardware_entry(baud_frame)
             self.arduino_baud_entry.pack(side="right")
             self.arduino_baud_entry.insert(0, self.saved_arduino_baud)
             self.arduino_baud_entry.bind("<KeyRelease>", self._on_arduino_baud_changed)
             self.arduino_baud_entry.bind("<FocusOut>", self._on_arduino_baud_changed)
 
-            btn_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_text_button(btn_frame, "CONNECT ARDUINO", lambda: self._connect_mouse_api("Arduino")).pack(side="left")
-            self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "CONNECT ARDUINO", lambda: self._connect_mouse_api("Arduino")).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
             return
 
         if mode == "SendInput":
             tip = ctk.CTkLabel(
-                self.hardware_content_frame,
+                self.mouse_content_frame,
                 text="Win32 SendInput API (software injection, no COM needed)",
                 font=("Roboto", 10),
                 text_color=COLOR_TEXT_DIM,
@@ -1327,55 +1404,55 @@ class ViewerApp(ctk.CTk):
             tip.pack(anchor="w", pady=(0, 8))
 
             sendinput_notice = ctk.CTkLabel(
-                self.hardware_content_frame,
+                self.mouse_content_frame,
                 text="For dual-PC streaming setups (e.g., Moonlight).",
                 font=("Roboto", 10, "bold"),
                 text_color=COLOR_DANGER,
             )
             sendinput_notice.pack(anchor="w", pady=(0, 8))
 
-            btn_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_text_button(btn_frame, "ENABLE SENDINPUT", lambda: self._connect_mouse_api("SendInput")).pack(side="left")
-            self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "ENABLE SENDINPUT", lambda: self._connect_mouse_api("SendInput")).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
             return
 
         if mode == "MakV2":
             tip = ctk.CTkLabel(
-                self.hardware_content_frame,
+                self.mouse_content_frame,
                 text="MakV2 API (ASCII km.* commands over serial)",
                 font=("Roboto", 10),
                 text_color=COLOR_TEXT_DIM,
             )
             tip.pack(anchor="w", pady=(0, 8))
 
-            port_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            port_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             port_frame.pack(fill="x", pady=3)
             ctk.CTkLabel(port_frame, text="Port (optional)", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-            self.makv2_port_entry = ctk.CTkEntry(port_frame, fg_color=COLOR_SURFACE, border_width=0, text_color=COLOR_TEXT, width=170)
+            self.makv2_port_entry = self._create_hardware_entry(port_frame)
             self.makv2_port_entry.pack(side="right")
             self.makv2_port_entry.insert(0, self.saved_makv2_port)
             self.makv2_port_entry.bind("<KeyRelease>", self._on_makv2_port_changed)
             self.makv2_port_entry.bind("<FocusOut>", self._on_makv2_port_changed)
 
-            baud_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            baud_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             baud_frame.pack(fill="x", pady=3)
             ctk.CTkLabel(baud_frame, text="Baud", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-            self.makv2_baud_entry = ctk.CTkEntry(baud_frame, fg_color=COLOR_SURFACE, border_width=0, text_color=COLOR_TEXT, width=170)
+            self.makv2_baud_entry = self._create_hardware_entry(baud_frame)
             self.makv2_baud_entry.pack(side="right")
             self.makv2_baud_entry.insert(0, self.saved_makv2_baud)
             self.makv2_baud_entry.bind("<KeyRelease>", self._on_makv2_baud_changed)
             self.makv2_baud_entry.bind("<FocusOut>", self._on_makv2_baud_changed)
 
-            btn_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_text_button(btn_frame, "CONNECT MAKV2", lambda: self._connect_mouse_api("MakV2")).pack(side="left")
-            self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "CONNECT MAKV2", lambda: self._connect_mouse_api("MakV2")).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
             return
 
         if mode == "MakcuController":
             tip = ctk.CTkLabel(
-                self.hardware_content_frame,
+                self.mouse_content_frame,
                 text="MakcuController API (serial ctl.stick / ctl.clear / ctl.state)",
                 font=("Roboto", 10),
                 text_color=COLOR_TEXT_DIM,
@@ -1383,54 +1460,42 @@ class ViewerApp(ctk.CTk):
             tip.pack(anchor="w", pady=(0, 8))
 
             notice = ctk.CTkLabel(
-                self.hardware_content_frame,
+                self.mouse_content_frame,
                 text="Movement uses controller stick output; click and keyboard output use local SendInput fallback.",
                 font=("Roboto", 9),
                 text_color=COLOR_TEXT_DIM,
             )
             notice.pack(anchor="w", pady=(0, 8))
 
-            port_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            port_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             port_frame.pack(fill="x", pady=3)
             ctk.CTkLabel(port_frame, text="Port (optional)", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-            self.makcu_controller_port_entry = ctk.CTkEntry(
-                port_frame,
-                fg_color=COLOR_SURFACE,
-                border_width=0,
-                text_color=COLOR_TEXT,
-                width=170,
-            )
+            self.makcu_controller_port_entry = self._create_hardware_entry(port_frame)
             self.makcu_controller_port_entry.pack(side="right")
             self.makcu_controller_port_entry.insert(0, self.saved_makcu_controller_port)
             self.makcu_controller_port_entry.bind("<KeyRelease>", self._on_makcu_controller_port_changed)
             self.makcu_controller_port_entry.bind("<FocusOut>", self._on_makcu_controller_port_changed)
 
-            baud_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            baud_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             baud_frame.pack(fill="x", pady=3)
             ctk.CTkLabel(baud_frame, text="Baud", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-            self.makcu_controller_baud_entry = ctk.CTkEntry(
-                baud_frame,
-                fg_color=COLOR_SURFACE,
-                border_width=0,
-                text_color=COLOR_TEXT,
-                width=170,
-            )
+            self.makcu_controller_baud_entry = self._create_hardware_entry(baud_frame)
             self.makcu_controller_baud_entry.pack(side="right")
             self.makcu_controller_baud_entry.insert(0, self.saved_makcu_controller_baud)
             self.makcu_controller_baud_entry.bind("<KeyRelease>", self._on_makcu_controller_baud_changed)
             self.makcu_controller_baud_entry.bind("<FocusOut>", self._on_makcu_controller_baud_changed)
 
-            btn_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_text_button(
+            self._add_hardware_action_button(
                 btn_frame, "CONNECT MAKCU CONTROLLER", lambda: self._connect_mouse_api("MakcuController")
             ).pack(side="left")
-            self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
             return
 
         if mode == "MakxdMakAPI":
             tip = ctk.CTkLabel(
-                self.hardware_content_frame,
+                self.mouse_content_frame,
                 text="Makxd_Mak API (serial binary opcode protocol)",
                 font=("Roboto", 10),
                 text_color=COLOR_TEXT_DIM,
@@ -1438,119 +1503,178 @@ class ViewerApp(ctk.CTk):
             tip.pack(anchor="w", pady=(0, 8))
 
             notice = ctk.CTkLabel(
-                self.hardware_content_frame,
+                self.mouse_content_frame,
                 text="Implements the MAKXD binary surface documented in Makxd_MakAPI.md.",
                 font=("Roboto", 9),
                 text_color=COLOR_TEXT_DIM,
             )
             notice.pack(anchor="w", pady=(0, 8))
 
-            port_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            port_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             port_frame.pack(fill="x", pady=3)
             ctk.CTkLabel(port_frame, text="Port (optional)", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-            self.makxd_mak_port_entry = ctk.CTkEntry(
-                port_frame, fg_color=COLOR_SURFACE, border_width=0, text_color=COLOR_TEXT, width=170
-            )
+            self.makxd_mak_port_entry = self._create_hardware_entry(port_frame)
             self.makxd_mak_port_entry.pack(side="right")
             self.makxd_mak_port_entry.insert(0, self.saved_makxd_mak_port)
             self.makxd_mak_port_entry.bind("<KeyRelease>", self._on_makxd_mak_port_changed)
             self.makxd_mak_port_entry.bind("<FocusOut>", self._on_makxd_mak_port_changed)
 
-            baud_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            baud_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             baud_frame.pack(fill="x", pady=3)
             ctk.CTkLabel(baud_frame, text="Baud", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-            self.makxd_mak_baud_entry = ctk.CTkEntry(
-                baud_frame, fg_color=COLOR_SURFACE, border_width=0, text_color=COLOR_TEXT, width=170
-            )
+            self.makxd_mak_baud_entry = self._create_hardware_entry(baud_frame)
             self.makxd_mak_baud_entry.pack(side="right")
             self.makxd_mak_baud_entry.insert(0, self.saved_makxd_mak_baud)
             self.makxd_mak_baud_entry.bind("<KeyRelease>", self._on_makxd_mak_baud_changed)
             self.makxd_mak_baud_entry.bind("<FocusOut>", self._on_makxd_mak_baud_changed)
 
-            btn_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_text_button(btn_frame, "CONNECT MAKXD_MAKAPI", lambda: self._connect_mouse_api("MakxdMakAPI")).pack(side="left")
-            self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "CONNECT MAKXD_MAKAPI", lambda: self._connect_mouse_api("MakxdMakAPI")).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
             return
 
         if mode == "DHZ":
             tip = ctk.CTkLabel(
-                self.hardware_content_frame,
+                self.mouse_content_frame,
                 text="DHZ API (UDP + Caesar-shift command protocol)",
                 font=("Roboto", 10),
                 text_color=COLOR_TEXT_DIM,
             )
             tip.pack(anchor="w", pady=(0, 8))
 
-            ip_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            ip_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             ip_frame.pack(fill="x", pady=3)
             ctk.CTkLabel(ip_frame, text="IP Address", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-            self.dhz_ip_entry = ctk.CTkEntry(ip_frame, fg_color=COLOR_SURFACE, border_width=0, text_color=COLOR_TEXT, width=170)
+            self.dhz_ip_entry = self._create_hardware_entry(ip_frame)
             self.dhz_ip_entry.pack(side="right")
             self.dhz_ip_entry.insert(0, self.saved_dhz_ip)
             self.dhz_ip_entry.bind("<KeyRelease>", self._on_dhz_ip_changed)
             self.dhz_ip_entry.bind("<FocusOut>", self._on_dhz_ip_changed)
 
-            port_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            port_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             port_frame.pack(fill="x", pady=3)
             ctk.CTkLabel(port_frame, text="Port", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-            self.dhz_port_entry = ctk.CTkEntry(port_frame, fg_color=COLOR_SURFACE, border_width=0, text_color=COLOR_TEXT, width=170)
+            self.dhz_port_entry = self._create_hardware_entry(port_frame)
             self.dhz_port_entry.pack(side="right")
             self.dhz_port_entry.insert(0, self.saved_dhz_port)
             self.dhz_port_entry.bind("<KeyRelease>", self._on_dhz_port_changed)
             self.dhz_port_entry.bind("<FocusOut>", self._on_dhz_port_changed)
 
-            random_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            random_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             random_frame.pack(fill="x", pady=3)
             ctk.CTkLabel(random_frame, text="Random Shift", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-            self.dhz_random_entry = ctk.CTkEntry(random_frame, fg_color=COLOR_SURFACE, border_width=0, text_color=COLOR_TEXT, width=170)
+            self.dhz_random_entry = self._create_hardware_entry(random_frame)
             self.dhz_random_entry.pack(side="right")
             self.dhz_random_entry.insert(0, self.saved_dhz_random)
             self.dhz_random_entry.bind("<KeyRelease>", self._on_dhz_random_changed)
             self.dhz_random_entry.bind("<FocusOut>", self._on_dhz_random_changed)
 
-            btn_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_text_button(btn_frame, "CONNECT DHZ", lambda: self._connect_mouse_api("DHZ")).pack(side="left")
-            self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "CONNECT DHZ", lambda: self._connect_mouse_api("DHZ")).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
             return
 
         if mode == "Ferrum":
             tip = ctk.CTkLabel(
-                self.hardware_content_frame,
-                text="Ferrum Keyboard and Mouse API (Serial Port, KM style commands)",
+                self.mouse_content_frame,
+                text="Ferrum multi-mode backend",
                 font=("Roboto", 10),
                 text_color=COLOR_TEXT_DIM,
             )
             tip.pack(anchor="w", pady=(0, 8))
 
-            port_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
-            port_frame.pack(fill="x", pady=3)
-            ctk.CTkLabel(port_frame, text="COM Port (optional)", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-            self.ferrum_device_path_entry = ctk.CTkEntry(
-                port_frame,
-                fg_color=COLOR_SURFACE,
-                border_width=0,
-                text_color=COLOR_TEXT,
-                width=170,
+            mode_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
+            mode_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(mode_frame, text="Ferrum Mode", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.ferrum_mode_option = self._add_hardware_option_menu(
+                ["KmAPI", "NetAPI", "DhzAPI"],
+                self._on_ferrum_mode_selected,
+                parent=mode_frame,
             )
-            self.ferrum_device_path_entry.pack(side="right")
-            self.ferrum_device_path_entry.insert(0, self.saved_ferrum_device_path)
-            self.ferrum_device_path_entry.bind("<KeyRelease>", self._on_ferrum_device_path_changed)
-            self.ferrum_device_path_entry.bind("<FocusOut>", self._on_ferrum_device_path_changed)
+            self.ferrum_mode_option.pack(side="right")
+            if self.saved_ferrum_mode not in ("KmAPI", "NetAPI", "DhzAPI"):
+                self.saved_ferrum_mode = "KmAPI"
+            self.ferrum_mode_option.set(self.saved_ferrum_mode)
 
-            notice = ctk.CTkLabel(
-                self.hardware_content_frame,
-                text="Leave empty for auto-detection. Tries baud rates: 115200, 9600, 38400, 57600",
-                font=("Roboto", 9),
-                text_color=COLOR_TEXT_DIM,
-            )
-            notice.pack(anchor="w", pady=(0, 8))
+            ferrum_mode = self.saved_ferrum_mode
+            if ferrum_mode == "NetAPI":
+                ip_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
+                ip_frame.pack(fill="x", pady=3)
+                ctk.CTkLabel(ip_frame, text="IP Address", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+                self.ferrum_net_ip_entry = self._create_hardware_entry(ip_frame)
+                self.ferrum_net_ip_entry.pack(side="right")
+                self.ferrum_net_ip_entry.insert(0, self.saved_ferrum_net_ip)
+                self.ferrum_net_ip_entry.bind("<KeyRelease>", self._on_ferrum_net_ip_changed)
+                self.ferrum_net_ip_entry.bind("<FocusOut>", self._on_ferrum_net_ip_changed)
 
-            btn_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+                port_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
+                port_frame.pack(fill="x", pady=3)
+                ctk.CTkLabel(port_frame, text="Port", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+                self.ferrum_net_port_entry = self._create_hardware_entry(port_frame)
+                self.ferrum_net_port_entry.pack(side="right")
+                self.ferrum_net_port_entry.insert(0, self.saved_ferrum_net_port)
+                self.ferrum_net_port_entry.bind("<KeyRelease>", self._on_ferrum_net_port_changed)
+                self.ferrum_net_port_entry.bind("<FocusOut>", self._on_ferrum_net_port_changed)
+
+                uuid_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
+                uuid_frame.pack(fill="x", pady=3)
+                ctk.CTkLabel(uuid_frame, text="UUID", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+                self.ferrum_net_uuid_entry = self._create_hardware_entry(uuid_frame)
+                self.ferrum_net_uuid_entry.pack(side="right")
+                self.ferrum_net_uuid_entry.insert(0, self.saved_ferrum_net_uuid)
+                self.ferrum_net_uuid_entry.bind("<KeyRelease>", self._on_ferrum_net_uuid_changed)
+                self.ferrum_net_uuid_entry.bind("<FocusOut>", self._on_ferrum_net_uuid_changed)
+            elif ferrum_mode == "DhzAPI":
+                ip_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
+                ip_frame.pack(fill="x", pady=3)
+                ctk.CTkLabel(ip_frame, text="IP Address", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+                self.ferrum_dhz_ip_entry = self._create_hardware_entry(ip_frame)
+                self.ferrum_dhz_ip_entry.pack(side="right")
+                self.ferrum_dhz_ip_entry.insert(0, self.saved_ferrum_dhz_ip)
+                self.ferrum_dhz_ip_entry.bind("<KeyRelease>", self._on_ferrum_dhz_ip_changed)
+                self.ferrum_dhz_ip_entry.bind("<FocusOut>", self._on_ferrum_dhz_ip_changed)
+
+                port_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
+                port_frame.pack(fill="x", pady=3)
+                ctk.CTkLabel(port_frame, text="Port", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+                self.ferrum_dhz_port_entry = self._create_hardware_entry(port_frame)
+                self.ferrum_dhz_port_entry.pack(side="right")
+                self.ferrum_dhz_port_entry.insert(0, self.saved_ferrum_dhz_port)
+                self.ferrum_dhz_port_entry.bind("<KeyRelease>", self._on_ferrum_dhz_port_changed)
+                self.ferrum_dhz_port_entry.bind("<FocusOut>", self._on_ferrum_dhz_port_changed)
+
+                random_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
+                random_frame.pack(fill="x", pady=3)
+                ctk.CTkLabel(random_frame, text="Random Shift", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+                self.ferrum_dhz_random_entry = self._create_hardware_entry(random_frame)
+                self.ferrum_dhz_random_entry.pack(side="right")
+                self.ferrum_dhz_random_entry.insert(0, self.saved_ferrum_dhz_random)
+                self.ferrum_dhz_random_entry.bind("<KeyRelease>", self._on_ferrum_dhz_random_changed)
+                self.ferrum_dhz_random_entry.bind("<FocusOut>", self._on_ferrum_dhz_random_changed)
+            else:
+                port_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
+                port_frame.pack(fill="x", pady=3)
+                ctk.CTkLabel(port_frame, text="COM Port (optional)", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+                self.ferrum_device_path_entry = self._create_hardware_entry(port_frame)
+                self.ferrum_device_path_entry.pack(side="right")
+                self.ferrum_device_path_entry.insert(0, self.saved_ferrum_device_path)
+                self.ferrum_device_path_entry.bind("<KeyRelease>", self._on_ferrum_device_path_changed)
+                self.ferrum_device_path_entry.bind("<FocusOut>", self._on_ferrum_device_path_changed)
+
+                notice = ctk.CTkLabel(
+                    self.mouse_content_frame,
+                    text="KmAPI over serial. Leave port empty for auto-detection. Tries baud rates: 115200, 9600, 38400, 57600",
+                    font=("Roboto", 9),
+                    text_color=COLOR_TEXT_DIM,
+                )
+                notice.pack(anchor="w", pady=(0, 8))
+
+            btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_text_button(btn_frame, "CONNECT FERRUM", lambda: self._connect_mouse_api("Ferrum")).pack(side="left")
-            self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "CONNECT FERRUM", lambda: self._connect_mouse_api("Ferrum")).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
             return
 
         if mode == "KmboxA":
@@ -1563,32 +1687,26 @@ class ViewerApp(ctk.CTk):
                 pass
 
             tip = ctk.CTkLabel(
-                self.hardware_content_frame,
+                self.mouse_content_frame,
                 text=f"KmboxA API auto DLL by Python version: {dll_name}",
                 font=("Roboto", 10),
                 text_color=COLOR_TEXT_DIM,
             )
             tip.pack(anchor="w", pady=(0, 8))
 
-            vid_pid_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            vid_pid_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             vid_pid_frame.pack(fill="x", pady=3)
             ctk.CTkLabel(vid_pid_frame, text="VID/PID", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-            self.kmboxa_vid_pid_entry = ctk.CTkEntry(
-                vid_pid_frame,
-                fg_color=COLOR_SURFACE,
-                border_width=0,
-                text_color=COLOR_TEXT,
-                width=170,
-            )
+            self.kmboxa_vid_pid_entry = self._create_hardware_entry(vid_pid_frame)
             self.kmboxa_vid_pid_entry.pack(side="right")
             self.kmboxa_vid_pid_entry.insert(0, self.saved_kmboxa_vid_pid)
             self.kmboxa_vid_pid_entry.bind("<KeyRelease>", self._on_kmboxa_vid_pid_changed)
             self.kmboxa_vid_pid_entry.bind("<FocusOut>", self._on_kmboxa_vid_pid_changed)
 
-            btn_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+            btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_text_button(btn_frame, "CONNECT KMBOXA", lambda: self._connect_mouse_api("KmboxA")).pack(side="left")
-            self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "CONNECT KMBOXA", lambda: self._connect_mouse_api("KmboxA")).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
             return
 
         # Net API controls
@@ -1601,44 +1719,44 @@ class ViewerApp(ctk.CTk):
             pass
 
         tip = ctk.CTkLabel(
-            self.hardware_content_frame,
+            self.mouse_content_frame,
             text=f"Net API auto DLL by Python version: {dll_name}",
             font=("Roboto", 10),
             text_color=COLOR_TEXT_DIM,
         )
         tip.pack(anchor="w", pady=(0, 8))
 
-        ip_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+        ip_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
         ip_frame.pack(fill="x", pady=3)
         ctk.CTkLabel(ip_frame, text="IP Address", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-        self.net_ip_entry = ctk.CTkEntry(ip_frame, fg_color=COLOR_SURFACE, border_width=0, text_color=COLOR_TEXT, width=170)
+        self.net_ip_entry = self._create_hardware_entry(ip_frame)
         self.net_ip_entry.pack(side="right")
         self.net_ip_entry.insert(0, self.saved_net_ip)
         self.net_ip_entry.bind("<KeyRelease>", self._on_net_ip_changed)
         self.net_ip_entry.bind("<FocusOut>", self._on_net_ip_changed)
 
-        port_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+        port_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
         port_frame.pack(fill="x", pady=3)
         ctk.CTkLabel(port_frame, text="Port", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-        self.net_port_entry = ctk.CTkEntry(port_frame, fg_color=COLOR_SURFACE, border_width=0, text_color=COLOR_TEXT, width=170)
+        self.net_port_entry = self._create_hardware_entry(port_frame)
         self.net_port_entry.pack(side="right")
         self.net_port_entry.insert(0, self.saved_net_port)
         self.net_port_entry.bind("<KeyRelease>", self._on_net_port_changed)
         self.net_port_entry.bind("<FocusOut>", self._on_net_port_changed)
 
-        uuid_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+        uuid_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
         uuid_frame.pack(fill="x", pady=3)
         ctk.CTkLabel(uuid_frame, text="UUID", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-        self.net_uuid_entry = ctk.CTkEntry(uuid_frame, fg_color=COLOR_SURFACE, border_width=0, text_color=COLOR_TEXT, width=170)
+        self.net_uuid_entry = self._create_hardware_entry(uuid_frame)
         self.net_uuid_entry.pack(side="right")
         self.net_uuid_entry.insert(0, self.saved_net_uuid)
         self.net_uuid_entry.bind("<KeyRelease>", self._on_net_uuid_changed)
         self.net_uuid_entry.bind("<FocusOut>", self._on_net_uuid_changed)
 
-        btn_frame = ctk.CTkFrame(self.hardware_content_frame, fg_color="transparent")
+        btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
         btn_frame.pack(fill="x", pady=8)
-        self._add_text_button(btn_frame, "CONNECT NET", lambda: self._connect_mouse_api("Net")).pack(side="left")
-        self._add_text_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+        self._add_hardware_action_button(btn_frame, "CONNECT NET", lambda: self._connect_mouse_api("Net")).pack(side="left")
+        self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
 
     def _on_mouse_api_changed(self, val):
         mode_norm = str(val).strip().lower()
@@ -1682,6 +1800,7 @@ class ViewerApp(ctk.CTk):
         except Exception:
             pass
         self._update_mouse_api_ui()
+        self._update_keyboard_api_ui()
         self._set_status_indicator(f"Status: Mouse API {self.saved_mouse_api} selected", COLOR_TEXT_DIM)
         self._update_hardware_status_ui()
 
@@ -1690,10 +1809,290 @@ class ViewerApp(ctk.CTk):
         self.saved_keyboard_api = normalized
         config.keyboard_api = normalized
         self._set_status_indicator(f"Status: Keyboard API {normalized} selected", COLOR_TEXT_DIM)
+        self._update_keyboard_api_ui()
         self._update_hardware_status_ui()
 
         if str(getattr(self, "_active_tab_name", "")) == "Trigger":
             self._show_tb_tab()
+
+    def _update_keyboard_api_ui(self):
+        if not hasattr(self, "keyboard_content_frame") or not self.keyboard_content_frame.winfo_exists():
+            return
+
+        for widget in self.keyboard_content_frame.winfo_children():
+            widget.destroy()
+
+        selected_keyboard_api = self._normalize_keyboard_api_name(
+            getattr(self, "saved_keyboard_api", getattr(config, "keyboard_api", "Follow Mouse API"))
+        )
+        mouse_api = self._normalize_mouse_api_name(getattr(config, "mouse_api", "Serial"))
+        resolved_keyboard_api = mouse_api if selected_keyboard_api == "Follow Mouse API" else selected_keyboard_api
+
+        ctk.CTkLabel(
+            self.keyboard_content_frame,
+            text=f"Selected: {selected_keyboard_api}",
+            font=("Roboto", 10),
+            text_color=COLOR_TEXT_DIM,
+            anchor="w",
+        ).pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(
+            self.keyboard_content_frame,
+            text=f"Resolved backend: {resolved_keyboard_api}",
+            font=("Roboto", 10),
+            text_color=COLOR_TEXT_DIM,
+            anchor="w",
+        ).pack(fill="x", pady=(0, 8))
+
+        if selected_keyboard_api == "Follow Mouse API":
+            message = "Keyboard follows the active mouse backend connection. Connect the mouse API above."
+            action_text = "USE MOUSE CONNECTION"
+        elif resolved_keyboard_api == "SendInput":
+            message = "SendInput keyboard output is local only and does not require a hardware mouse connection."
+            action_text = "ENABLE KEYBOARD SENDINPUT"
+        elif resolved_keyboard_api == "Ferrum":
+            message = "Keyboard Ferrum uses its own connection settings. KmAPI supports an independent keyboard session; NetAPI and DhzAPI are UI-configurable but still share the mouse session today."
+            action_text = "CONNECT KEYBOARD FERRUM"
+        else:
+            message = (
+                "Keyboard output is routed through the selected backend. "
+                "This build still shares the underlying hardware session with the mouse backend."
+            )
+            action_text = f"CONNECT KEYBOARD {resolved_keyboard_api.upper()}"
+
+        if resolved_keyboard_api == "Ferrum":
+            mode_frame = ctk.CTkFrame(self.keyboard_content_frame, fg_color="transparent")
+            mode_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(mode_frame, text="Ferrum Mode", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.keyboard_ferrum_mode_option = self._add_hardware_option_menu(
+                ["KmAPI", "NetAPI", "DhzAPI"],
+                self._on_keyboard_ferrum_mode_selected,
+                parent=mode_frame,
+            )
+            self.keyboard_ferrum_mode_option.pack(side="right")
+            if self.saved_keyboard_ferrum_mode not in ("KmAPI", "NetAPI", "DhzAPI"):
+                self.saved_keyboard_ferrum_mode = "KmAPI"
+            self.keyboard_ferrum_mode_option.set(self.saved_keyboard_ferrum_mode)
+
+        if resolved_keyboard_api == "Ferrum" and self.saved_keyboard_ferrum_mode == "NetAPI":
+            ip_frame = ctk.CTkFrame(self.keyboard_content_frame, fg_color="transparent")
+            ip_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(ip_frame, text="IP Address", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.keyboard_ferrum_net_ip_entry = self._create_hardware_entry(ip_frame)
+            self.keyboard_ferrum_net_ip_entry.pack(side="right")
+            self.keyboard_ferrum_net_ip_entry.insert(0, self.saved_keyboard_ferrum_net_ip)
+            self.keyboard_ferrum_net_ip_entry.bind("<KeyRelease>", self._on_keyboard_ferrum_net_ip_changed)
+            self.keyboard_ferrum_net_ip_entry.bind("<FocusOut>", self._on_keyboard_ferrum_net_ip_changed)
+
+            port_frame = ctk.CTkFrame(self.keyboard_content_frame, fg_color="transparent")
+            port_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(port_frame, text="Port", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.keyboard_ferrum_net_port_entry = self._create_hardware_entry(port_frame)
+            self.keyboard_ferrum_net_port_entry.pack(side="right")
+            self.keyboard_ferrum_net_port_entry.insert(0, self.saved_keyboard_ferrum_net_port)
+            self.keyboard_ferrum_net_port_entry.bind("<KeyRelease>", self._on_keyboard_ferrum_net_port_changed)
+            self.keyboard_ferrum_net_port_entry.bind("<FocusOut>", self._on_keyboard_ferrum_net_port_changed)
+
+            uuid_frame = ctk.CTkFrame(self.keyboard_content_frame, fg_color="transparent")
+            uuid_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(uuid_frame, text="UUID", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.keyboard_ferrum_net_uuid_entry = self._create_hardware_entry(uuid_frame)
+            self.keyboard_ferrum_net_uuid_entry.pack(side="right")
+            self.keyboard_ferrum_net_uuid_entry.insert(0, self.saved_keyboard_ferrum_net_uuid)
+            self.keyboard_ferrum_net_uuid_entry.bind("<KeyRelease>", self._on_keyboard_ferrum_net_uuid_changed)
+            self.keyboard_ferrum_net_uuid_entry.bind("<FocusOut>", self._on_keyboard_ferrum_net_uuid_changed)
+        elif resolved_keyboard_api == "Ferrum" and self.saved_keyboard_ferrum_mode == "DhzAPI":
+            ip_frame = ctk.CTkFrame(self.keyboard_content_frame, fg_color="transparent")
+            ip_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(ip_frame, text="IP Address", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.keyboard_ferrum_dhz_ip_entry = self._create_hardware_entry(ip_frame)
+            self.keyboard_ferrum_dhz_ip_entry.pack(side="right")
+            self.keyboard_ferrum_dhz_ip_entry.insert(0, self.saved_keyboard_ferrum_dhz_ip)
+            self.keyboard_ferrum_dhz_ip_entry.bind("<KeyRelease>", self._on_keyboard_ferrum_dhz_ip_changed)
+            self.keyboard_ferrum_dhz_ip_entry.bind("<FocusOut>", self._on_keyboard_ferrum_dhz_ip_changed)
+
+            port_frame = ctk.CTkFrame(self.keyboard_content_frame, fg_color="transparent")
+            port_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(port_frame, text="Port", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.keyboard_ferrum_dhz_port_entry = self._create_hardware_entry(port_frame)
+            self.keyboard_ferrum_dhz_port_entry.pack(side="right")
+            self.keyboard_ferrum_dhz_port_entry.insert(0, self.saved_keyboard_ferrum_dhz_port)
+            self.keyboard_ferrum_dhz_port_entry.bind("<KeyRelease>", self._on_keyboard_ferrum_dhz_port_changed)
+            self.keyboard_ferrum_dhz_port_entry.bind("<FocusOut>", self._on_keyboard_ferrum_dhz_port_changed)
+
+            random_frame = ctk.CTkFrame(self.keyboard_content_frame, fg_color="transparent")
+            random_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(random_frame, text="Random Shift", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.keyboard_ferrum_dhz_random_entry = self._create_hardware_entry(random_frame)
+            self.keyboard_ferrum_dhz_random_entry.pack(side="right")
+            self.keyboard_ferrum_dhz_random_entry.insert(0, self.saved_keyboard_ferrum_dhz_random)
+            self.keyboard_ferrum_dhz_random_entry.bind("<KeyRelease>", self._on_keyboard_ferrum_dhz_random_changed)
+            self.keyboard_ferrum_dhz_random_entry.bind("<FocusOut>", self._on_keyboard_ferrum_dhz_random_changed)
+        elif resolved_keyboard_api == "Ferrum":
+            port_frame = ctk.CTkFrame(self.keyboard_content_frame, fg_color="transparent")
+            port_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(port_frame, text="COM Port (optional)", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.keyboard_ferrum_device_path_entry = self._create_hardware_entry(port_frame)
+            self.keyboard_ferrum_device_path_entry.pack(side="right")
+            self.keyboard_ferrum_device_path_entry.insert(0, self.saved_keyboard_ferrum_device_path)
+            self.keyboard_ferrum_device_path_entry.bind("<KeyRelease>", self._on_keyboard_ferrum_device_path_changed)
+            self.keyboard_ferrum_device_path_entry.bind("<FocusOut>", self._on_keyboard_ferrum_device_path_changed)
+
+        ctk.CTkLabel(
+            self.keyboard_content_frame,
+            text=message,
+            font=("Roboto", 9),
+            text_color=COLOR_TEXT_DIM,
+            justify="left",
+            wraplength=720,
+            anchor="w",
+        ).pack(fill="x", pady=(0, 8))
+
+        btn_frame = ctk.CTkFrame(self.keyboard_content_frame, fg_color="transparent")
+        btn_frame.pack(fill="x", pady=(0, 2))
+        self._add_hardware_action_button(btn_frame, action_text, self._connect_keyboard_api).pack(side="left")
+
+    def _connect_keyboard_api(self):
+        if getattr(self, "_keyboard_api_connecting", False):
+            self._set_status_indicator("Status: Keyboard API connecting...", COLOR_TEXT_DIM)
+            return
+
+        selected_keyboard_api = self._normalize_keyboard_api_name(
+            getattr(config, "keyboard_api", getattr(self, "saved_keyboard_api", "Follow Mouse API"))
+        )
+        mouse_api = self._normalize_mouse_api_name(getattr(config, "mouse_api", "Serial"))
+        resolved_keyboard_api = mouse_api if selected_keyboard_api == "Follow Mouse API" else selected_keyboard_api
+
+        if selected_keyboard_api == "Follow Mouse API":
+            self._set_status_indicator(
+                f"Status: Keyboard follows mouse connection ({resolved_keyboard_api})",
+                COLOR_TEXT_DIM,
+            )
+            return
+
+        if resolved_keyboard_api == "SendInput":
+            self._set_status_indicator("Status: Keyboard SendInput ready", COLOR_TEXT)
+            self._update_hardware_status_ui()
+            return
+        if resolved_keyboard_api == "Ferrum":
+            config.keyboard_ferrum_mode = self.saved_keyboard_ferrum_mode
+            if self.saved_keyboard_ferrum_mode == "NetAPI":
+                if hasattr(self, "keyboard_ferrum_net_ip_entry") and self.keyboard_ferrum_net_ip_entry.winfo_exists():
+                    self.saved_keyboard_ferrum_net_ip = self.keyboard_ferrum_net_ip_entry.get().strip()
+                if hasattr(self, "keyboard_ferrum_net_port_entry") and self.keyboard_ferrum_net_port_entry.winfo_exists():
+                    self.saved_keyboard_ferrum_net_port = self.keyboard_ferrum_net_port_entry.get().strip()
+                if hasattr(self, "keyboard_ferrum_net_uuid_entry") and self.keyboard_ferrum_net_uuid_entry.winfo_exists():
+                    self.saved_keyboard_ferrum_net_uuid = self.keyboard_ferrum_net_uuid_entry.get().strip()
+                config.keyboard_ferrum_net_ip = self.saved_keyboard_ferrum_net_ip
+                config.keyboard_ferrum_net_port = self.saved_keyboard_ferrum_net_port
+                config.keyboard_ferrum_net_uuid = self.saved_keyboard_ferrum_net_uuid
+            elif self.saved_keyboard_ferrum_mode == "DhzAPI":
+                if hasattr(self, "keyboard_ferrum_dhz_ip_entry") and self.keyboard_ferrum_dhz_ip_entry.winfo_exists():
+                    self.saved_keyboard_ferrum_dhz_ip = self.keyboard_ferrum_dhz_ip_entry.get().strip()
+                if hasattr(self, "keyboard_ferrum_dhz_port_entry") and self.keyboard_ferrum_dhz_port_entry.winfo_exists():
+                    self.saved_keyboard_ferrum_dhz_port = self.keyboard_ferrum_dhz_port_entry.get().strip()
+                if hasattr(self, "keyboard_ferrum_dhz_random_entry") and self.keyboard_ferrum_dhz_random_entry.winfo_exists():
+                    self.saved_keyboard_ferrum_dhz_random = self.keyboard_ferrum_dhz_random_entry.get().strip()
+                config.keyboard_ferrum_dhz_ip = self.saved_keyboard_ferrum_dhz_ip
+                config.keyboard_ferrum_dhz_port = self.saved_keyboard_ferrum_dhz_port
+                try:
+                    config.keyboard_ferrum_dhz_random = int(self.saved_keyboard_ferrum_dhz_random)
+                except ValueError:
+                    config.keyboard_ferrum_dhz_random = 0
+            else:
+                if hasattr(self, "keyboard_ferrum_device_path_entry") and self.keyboard_ferrum_device_path_entry.winfo_exists():
+                    self.saved_keyboard_ferrum_device_path = self.keyboard_ferrum_device_path_entry.get().strip()
+                config.keyboard_ferrum_device_path = self.saved_keyboard_ferrum_device_path
+
+            if self.saved_keyboard_ferrum_mode != "KmAPI":
+                self._set_status_indicator(
+                    f"Status: Keyboard Ferrum {self.saved_keyboard_ferrum_mode} UI is available, but independent connect is not implemented yet.",
+                    COLOR_WARNING,
+                )
+                self._update_hardware_status_ui()
+                return
+            config.keyboard_ferrum_connection_type = self.saved_keyboard_ferrum_connection_type
+
+            self._keyboard_api_connecting = True
+            self._set_status_indicator("Status: Keyboard Ferrum connecting", COLOR_TEXT_DIM)
+            threading.Thread(target=self._connect_keyboard_api_worker, args=("Ferrum",), daemon=True).start()
+            return
+
+        self._set_status_indicator(
+            f"Status: Keyboard API {resolved_keyboard_api} still uses the shared hardware session. Connect it from Mouse Connection.",
+            COLOR_TEXT_DIM,
+        )
+
+    def _connect_keyboard_api_worker(self, mode):
+        success, error = False, "unknown error"
+        try:
+            from src.utils import mouse as mouse_backend
+
+            success, error = mouse_backend.connect_keyboard_backend(
+                mode,
+                ferrum_device_path=self.saved_keyboard_ferrum_device_path,
+                ferrum_connection_type=self.saved_keyboard_ferrum_connection_type,
+            )
+        except Exception as e:
+            success = False
+            error = str(e)
+
+        self.after(0, lambda: self._on_connect_keyboard_api_done(mode, success, error))
+
+    def _on_connect_keyboard_api_done(self, mode, success, error):
+        self._keyboard_api_connecting = False
+        if success:
+            self._set_status_indicator(f"Status: Keyboard {mode} connected", COLOR_TEXT)
+        else:
+            suffix = f": {error}" if error else ""
+            self._set_status_indicator(f"Status: Keyboard {mode} connect failed{suffix}", COLOR_DANGER)
+        self._update_hardware_status_ui()
+
+    def _on_keyboard_ferrum_device_path_changed(self, event=None):
+        if hasattr(self, "keyboard_ferrum_device_path_entry") and self.keyboard_ferrum_device_path_entry.winfo_exists():
+            val = self.keyboard_ferrum_device_path_entry.get().strip()
+            self.saved_keyboard_ferrum_device_path = val
+            config.keyboard_ferrum_device_path = val
+
+    def _on_keyboard_ferrum_mode_selected(self, val):
+        mode = str(val).strip() or "KmAPI"
+        if mode not in ("KmAPI", "NetAPI", "DhzAPI"):
+            mode = "KmAPI"
+        self.saved_keyboard_ferrum_mode = mode
+        config.keyboard_ferrum_mode = mode
+        self._update_keyboard_api_ui()
+
+    def _on_keyboard_ferrum_net_ip_changed(self, event=None):
+        if hasattr(self, "keyboard_ferrum_net_ip_entry") and self.keyboard_ferrum_net_ip_entry.winfo_exists():
+            self.saved_keyboard_ferrum_net_ip = self.keyboard_ferrum_net_ip_entry.get().strip()
+            config.keyboard_ferrum_net_ip = self.saved_keyboard_ferrum_net_ip
+
+    def _on_keyboard_ferrum_net_port_changed(self, event=None):
+        if hasattr(self, "keyboard_ferrum_net_port_entry") and self.keyboard_ferrum_net_port_entry.winfo_exists():
+            self.saved_keyboard_ferrum_net_port = self.keyboard_ferrum_net_port_entry.get().strip()
+            config.keyboard_ferrum_net_port = self.saved_keyboard_ferrum_net_port
+
+    def _on_keyboard_ferrum_net_uuid_changed(self, event=None):
+        if hasattr(self, "keyboard_ferrum_net_uuid_entry") and self.keyboard_ferrum_net_uuid_entry.winfo_exists():
+            self.saved_keyboard_ferrum_net_uuid = self.keyboard_ferrum_net_uuid_entry.get().strip()
+            config.keyboard_ferrum_net_uuid = self.saved_keyboard_ferrum_net_uuid
+
+    def _on_keyboard_ferrum_dhz_ip_changed(self, event=None):
+        if hasattr(self, "keyboard_ferrum_dhz_ip_entry") and self.keyboard_ferrum_dhz_ip_entry.winfo_exists():
+            self.saved_keyboard_ferrum_dhz_ip = self.keyboard_ferrum_dhz_ip_entry.get().strip()
+            config.keyboard_ferrum_dhz_ip = self.saved_keyboard_ferrum_dhz_ip
+
+    def _on_keyboard_ferrum_dhz_port_changed(self, event=None):
+        if hasattr(self, "keyboard_ferrum_dhz_port_entry") and self.keyboard_ferrum_dhz_port_entry.winfo_exists():
+            self.saved_keyboard_ferrum_dhz_port = self.keyboard_ferrum_dhz_port_entry.get().strip()
+            config.keyboard_ferrum_dhz_port = self.saved_keyboard_ferrum_dhz_port
+
+    def _on_keyboard_ferrum_dhz_random_changed(self, event=None):
+        if hasattr(self, "keyboard_ferrum_dhz_random_entry") and self.keyboard_ferrum_dhz_random_entry.winfo_exists():
+            self.saved_keyboard_ferrum_dhz_random = self.keyboard_ferrum_dhz_random_entry.get().strip()
+            try:
+                config.keyboard_ferrum_dhz_random = int(self.saved_keyboard_ferrum_dhz_random)
+            except ValueError:
+                config.keyboard_ferrum_dhz_random = 0
 
     def _on_auto_connect_mouse_api_changed(self):
         val = bool(self.var_auto_connect_mouse_api.get())
@@ -1843,6 +2242,47 @@ class ViewerApp(ctk.CTk):
             connection_type_norm = "auto"
         self.saved_ferrum_connection_type = connection_type_norm
         config.ferrum_connection_type = connection_type_norm
+
+    def _on_ferrum_mode_selected(self, val):
+        mode = str(val).strip() or "KmAPI"
+        if mode not in ("KmAPI", "NetAPI", "DhzAPI"):
+            mode = "KmAPI"
+        self.saved_ferrum_mode = mode
+        config.ferrum_mode = mode
+        self._update_mouse_api_ui()
+
+    def _on_ferrum_net_ip_changed(self, event=None):
+        if hasattr(self, "ferrum_net_ip_entry") and self.ferrum_net_ip_entry.winfo_exists():
+            self.saved_ferrum_net_ip = self.ferrum_net_ip_entry.get().strip()
+            config.ferrum_net_ip = self.saved_ferrum_net_ip
+
+    def _on_ferrum_net_port_changed(self, event=None):
+        if hasattr(self, "ferrum_net_port_entry") and self.ferrum_net_port_entry.winfo_exists():
+            self.saved_ferrum_net_port = self.ferrum_net_port_entry.get().strip()
+            config.ferrum_net_port = self.saved_ferrum_net_port
+
+    def _on_ferrum_net_uuid_changed(self, event=None):
+        if hasattr(self, "ferrum_net_uuid_entry") and self.ferrum_net_uuid_entry.winfo_exists():
+            self.saved_ferrum_net_uuid = self.ferrum_net_uuid_entry.get().strip()
+            config.ferrum_net_uuid = self.saved_ferrum_net_uuid
+
+    def _on_ferrum_dhz_ip_changed(self, event=None):
+        if hasattr(self, "ferrum_dhz_ip_entry") and self.ferrum_dhz_ip_entry.winfo_exists():
+            self.saved_ferrum_dhz_ip = self.ferrum_dhz_ip_entry.get().strip()
+            config.ferrum_dhz_ip = self.saved_ferrum_dhz_ip
+
+    def _on_ferrum_dhz_port_changed(self, event=None):
+        if hasattr(self, "ferrum_dhz_port_entry") and self.ferrum_dhz_port_entry.winfo_exists():
+            self.saved_ferrum_dhz_port = self.ferrum_dhz_port_entry.get().strip()
+            config.ferrum_dhz_port = self.saved_ferrum_dhz_port
+
+    def _on_ferrum_dhz_random_changed(self, event=None):
+        if hasattr(self, "ferrum_dhz_random_entry") and self.ferrum_dhz_random_entry.winfo_exists():
+            self.saved_ferrum_dhz_random = self.ferrum_dhz_random_entry.get().strip()
+            try:
+                config.ferrum_dhz_random = int(self.saved_ferrum_dhz_random)
+            except ValueError:
+                config.ferrum_dhz_random = 0
 
     def _test_mouse_move(self):
         try:
@@ -2049,6 +2489,50 @@ class ViewerApp(ctk.CTk):
                 "dhz_random": config.dhz_random,
             })
         elif mode == "Ferrum":
+            payload["ferrum_mode"] = self.saved_ferrum_mode
+            config.ferrum_mode = self.saved_ferrum_mode
+            if self.saved_ferrum_mode == "NetAPI":
+                if hasattr(self, "ferrum_net_ip_entry") and self.ferrum_net_ip_entry.winfo_exists():
+                    self.saved_ferrum_net_ip = self.ferrum_net_ip_entry.get().strip()
+                if hasattr(self, "ferrum_net_port_entry") and self.ferrum_net_port_entry.winfo_exists():
+                    self.saved_ferrum_net_port = self.ferrum_net_port_entry.get().strip()
+                if hasattr(self, "ferrum_net_uuid_entry") and self.ferrum_net_uuid_entry.winfo_exists():
+                    self.saved_ferrum_net_uuid = self.ferrum_net_uuid_entry.get().strip()
+                config.ferrum_net_ip = self.saved_ferrum_net_ip
+                config.ferrum_net_port = self.saved_ferrum_net_port
+                config.ferrum_net_uuid = self.saved_ferrum_net_uuid
+                payload.update({
+                    "ferrum_net_ip": self.saved_ferrum_net_ip,
+                    "ferrum_net_port": self.saved_ferrum_net_port,
+                    "ferrum_net_uuid": self.saved_ferrum_net_uuid,
+                })
+            elif self.saved_ferrum_mode == "DhzAPI":
+                if hasattr(self, "ferrum_dhz_ip_entry") and self.ferrum_dhz_ip_entry.winfo_exists():
+                    self.saved_ferrum_dhz_ip = self.ferrum_dhz_ip_entry.get().strip()
+                if hasattr(self, "ferrum_dhz_port_entry") and self.ferrum_dhz_port_entry.winfo_exists():
+                    self.saved_ferrum_dhz_port = self.ferrum_dhz_port_entry.get().strip()
+                if hasattr(self, "ferrum_dhz_random_entry") and self.ferrum_dhz_random_entry.winfo_exists():
+                    self.saved_ferrum_dhz_random = self.ferrum_dhz_random_entry.get().strip()
+                config.ferrum_dhz_ip = self.saved_ferrum_dhz_ip
+                config.ferrum_dhz_port = self.saved_ferrum_dhz_port
+                try:
+                    config.ferrum_dhz_random = int(self.saved_ferrum_dhz_random)
+                except ValueError:
+                    config.ferrum_dhz_random = 0
+                payload.update({
+                    "ferrum_dhz_ip": self.saved_ferrum_dhz_ip,
+                    "ferrum_dhz_port": self.saved_ferrum_dhz_port,
+                    "ferrum_dhz_random": config.ferrum_dhz_random,
+                })
+            else:
+                if hasattr(self, "ferrum_device_path_entry") and self.ferrum_device_path_entry.winfo_exists():
+                    self.saved_ferrum_device_path = self.ferrum_device_path_entry.get().strip()
+                config.ferrum_device_path = self.saved_ferrum_device_path
+                payload.update({
+                    "ferrum_device_path": self.saved_ferrum_device_path,
+                    "ferrum_connection_type": "serial",
+                })
+        elif False and mode == "Ferrum":
             if hasattr(self, "ferrum_device_path_entry") and self.ferrum_device_path_entry.winfo_exists():
                 self.saved_ferrum_device_path = self.ferrum_device_path_entry.get().strip()
 
@@ -2079,7 +2563,7 @@ class ViewerApp(ctk.CTk):
         mode = payload.get("mode", "Serial")
         success, error = False, "unknown error"
         try:
-            from src.utils.mouse import switch_backend
+            from src.utils.mouse import connect_ferrum_mode, switch_backend
 
             if mode == "Net":
                 success, error = switch_backend(
@@ -2127,6 +2611,18 @@ class ViewerApp(ctk.CTk):
                     dhz_random=payload.get("dhz_random", 0),
                 )
             elif mode == "Ferrum":
+                success, error = connect_ferrum_mode(
+                    payload.get("ferrum_mode", "KmAPI"),
+                    ferrum_device_path=payload.get("ferrum_device_path", ""),
+                    ferrum_connection_type=payload.get("ferrum_connection_type", "serial"),
+                    ferrum_net_ip=payload.get("ferrum_net_ip", ""),
+                    ferrum_net_port=payload.get("ferrum_net_port", ""),
+                    ferrum_net_uuid=payload.get("ferrum_net_uuid", ""),
+                    ferrum_dhz_ip=payload.get("ferrum_dhz_ip", ""),
+                    ferrum_dhz_port=payload.get("ferrum_dhz_port", ""),
+                    ferrum_dhz_random=payload.get("ferrum_dhz_random", 0),
+                )
+            elif False and mode == "Ferrum":
                 success, error = switch_backend(
                     "Ferrum",
                     ferrum_device_path=payload.get("ferrum_device_path", ""),
@@ -2166,6 +2662,9 @@ class ViewerApp(ctk.CTk):
                 self._set_status_indicator("Status: Mouse API connected (MakxdMakAPI)", COLOR_TEXT)
             elif mode == "DHZ":
                 self._set_status_indicator("Status: Mouse API connected (DHZ)", COLOR_TEXT)
+            elif mode == "Ferrum":
+                ferrum_mode = str(payload.get("ferrum_mode", "KmAPI"))
+                self._set_status_indicator(f"Status: Mouse API connected (Ferrum {ferrum_mode})", COLOR_TEXT)
             else:
                 self._set_status_indicator("Status: Mouse API connected (Serial)", COLOR_TEXT)
             return
@@ -4351,6 +4850,19 @@ class ViewerApp(ctk.CTk):
         menu.grid(row=0, column=1, sticky="e")
         return menu
 
+    def _add_hardware_option_row_in_frame(self, parent, label_text, values, command):
+        """Hardware API row with stronger accent / 強化 Hardware API row 視覺層次"""
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.pack(fill="x", pady=5)
+        frame.grid_columnconfigure(0, weight=1)
+        frame.grid_columnconfigure(1, weight=0)
+        ctk.CTkLabel(frame, text=label_text, font=FONT_MAIN, text_color=COLOR_TEXT).grid(
+            row=0, column=0, sticky="w", padx=(0, 10)
+        )
+        menu = self._add_hardware_option_menu(values, command, parent=frame)
+        menu.grid(row=0, column=1, sticky="e")
+        return menu
+
     def _add_bind_capture_row_in_frame(self, parent, label_text, button_text, command):
         frame = ctk.CTkFrame(parent, fg_color="transparent")
         frame.pack(fill="x", pady=5)
@@ -4776,6 +5288,54 @@ class ViewerApp(ctk.CTk):
             height=28,
             corner_radius=8,
             command=command
+        )
+
+    def _add_hardware_action_button(self, parent, text, command):
+        """Hardware API action button / 給 Hardware API 使用的 accent button"""
+        return ctk.CTkButton(
+            parent,
+            text=text,
+            font=("Consolas", 10, "bold"),
+            text_color=COLOR_HARDWARE_BUTTON_TEXT,
+            fg_color=COLOR_HARDWARE_BUTTON_BG,
+            border_width=1,
+            border_color=COLOR_HARDWARE_INPUT_BORDER,
+            hover_color=COLOR_HARDWARE_BUTTON_HOVER,
+            height=28,
+            corner_radius=8,
+            command=command,
+        )
+
+    def _add_hardware_option_menu(self, values, command, parent=None):
+        """Hardware API option menu / 強調色更明顯的下拉選單"""
+        target_parent = parent if parent else self.content_frame
+        return ctk.CTkOptionMenu(
+            target_parent,
+            values=values,
+            command=command,
+            fg_color=COLOR_HARDWARE_INPUT_BG,
+            button_color=COLOR_HARDWARE_INPUT_BORDER,
+            button_hover_color=COLOR_HARDWARE_INPUT_HOVER,
+            text_color=COLOR_HARDWARE_BUTTON_TEXT,
+            font=FONT_MAIN,
+            dropdown_fg_color=COLOR_HARDWARE_DROPDOWN_BG,
+            dropdown_hover_color=COLOR_HARDWARE_BUTTON_HOVER,
+            dropdown_text_color=COLOR_HARDWARE_BUTTON_TEXT,
+            corner_radius=8,
+            height=28,
+            width=180,
+        )
+
+    def _create_hardware_entry(self, parent, width=170):
+        """Hardware API entry / 深色底加 accent border 的輸入框"""
+        return ctk.CTkEntry(
+            parent,
+            fg_color=COLOR_HARDWARE_INPUT_BG,
+            border_width=1,
+            border_color=COLOR_HARDWARE_INPUT_BORDER,
+            text_color=COLOR_HARDWARE_BUTTON_TEXT,
+            width=width,
+            corner_radius=8,
         )
 
     # --- 閭忚集鍔熻兘 ---
@@ -6964,6 +7524,8 @@ class ViewerApp(ctk.CTk):
     def _build_hardware_details_text(self, mode: str, connected: bool) -> str:
         auto_connect = bool(getattr(config, "auto_connect_mouse_api", False))
         keyboard_api = str(getattr(config, "keyboard_api", "Follow Mouse API"))
+        keyboard_connected = False
+        keyboard_backend = keyboard_api
         details = [
             f"Backend: {mode}",
             f"Keyboard API: {keyboard_api}",
@@ -6980,8 +7542,13 @@ class ViewerApp(ctk.CTk):
             from src.utils.mouse import NetAPI as net_api_module
             from src.utils.mouse import KmboxAAPI as kmboxa_api_module
             from src.utils.mouse import state as mouse_state
+            keyboard_connected = bool(mouse_backend.is_keyboard_backend_connected())
+            keyboard_backend = mouse_backend.get_keyboard_active_backend()
         except Exception:
             pass
+
+        details.append(f"Keyboard Backend Connected: {'Yes' if keyboard_connected else 'No'}")
+        details.append(f"Keyboard Active Backend: {keyboard_backend}")
 
         if mode == "Net":
             ip = str(getattr(config, "net_ip", ""))

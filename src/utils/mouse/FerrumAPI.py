@@ -33,6 +33,8 @@ _FERRUM_IDX_BY_BUTTON = {v: k for k, v in _FERRUM_BUTTON_BY_IDX.items()}
 # Ferrum 設備連接對象（串口）
 _ferrum_device = None
 _ferrum_lock = threading.Lock()
+_ferrum_keyboard_device = None
+_ferrum_keyboard_lock = threading.Lock()
 
 # 串口配置
 DEFAULT_BAUD_RATE = 115200
@@ -47,14 +49,41 @@ _key_states_cache = {}
 _key_states_lock = threading.Lock()
 
 
-def _send_cmd_no_wait(cmd: str):
+def _resolve_device_and_lock(role: str = "mouse"):
+    if str(role).strip().lower() == "keyboard":
+        return _ferrum_keyboard_device, _ferrum_keyboard_lock
+    return _ferrum_device, _ferrum_lock
+
+
+def _is_role_connected(role: str = "mouse") -> bool:
+    if str(role).strip().lower() == "keyboard":
+        return bool(getattr(state, "keyboard_is_connected", False) and getattr(state, "keyboard_active_backend", "") == "Ferrum")
+    return bool(state.is_connected and state.active_backend == "Ferrum")
+
+
+def _set_role_connected(role: str, connected: bool):
+    if str(role).strip().lower() == "keyboard":
+        state.set_keyboard_connected(bool(connected), "Ferrum")
+    else:
+        state.set_connected(bool(connected), "Ferrum")
+
+
+def _set_role_error(role: str, message: str):
+    if str(role).strip().lower() == "keyboard":
+        state.keyboard_last_connect_error = str(message or "")
+    else:
+        state.last_connect_error = str(message or "")
+
+
+def _send_cmd_no_wait(cmd: str, role: str = "mouse"):
     """
     通過串口發送命令（不等待響應）。
     
     Args:
         cmd: 命令字符串（不包含換行符，如果沒有 km. 前綴會自動添加）
     """
-    if not state.is_connected or state.active_backend != "Ferrum" or _ferrum_device is None:
+    device, device_lock = _resolve_device_and_lock(role)
+    if not _is_role_connected(role) or device is None:
         return
     
     try:
@@ -62,16 +91,16 @@ def _send_cmd_no_wait(cmd: str):
         if not cmd.startswith("km."):
             cmd = f"km.{cmd}"
         
-        with _ferrum_lock:
-            if _ferrum_device and _ferrum_device.is_open:
+        with device_lock:
+            if device and device.is_open:
                 command = f"{cmd}\r".encode("ascii", "ignore")
-                _ferrum_device.write(command)
-                _ferrum_device.flush()
+                device.write(command)
+                device.flush()
     except Exception as e:
         log_print(f"[Ferrum] Send command failed: {cmd} - {e}")
 
 
-def _send_cmd_with_response(cmd: str, timeout: float = 0.5):
+def _send_cmd_with_response(cmd: str, timeout: float = 0.5, role: str = "mouse"):
     """
     通過串口發送命令並等待響應。
     
@@ -82,19 +111,20 @@ def _send_cmd_with_response(cmd: str, timeout: float = 0.5):
     Returns:
         str: 響應字符串，失敗返回 None
     """
-    if not state.is_connected or state.active_backend != "Ferrum" or _ferrum_device is None:
+    device, device_lock = _resolve_device_and_lock(role)
+    if not _is_role_connected(role) or device is None:
         return None
     
     try:
         # 只在發送時使用鎖，讀取響應時釋放鎖以避免死鎖
-        with _ferrum_lock:
-            if not (_ferrum_device and _ferrum_device.is_open):
+        with device_lock:
+            if not (device and device.is_open):
                 return None
             
-            _ferrum_device.reset_input_buffer()
+            device.reset_input_buffer()
             command = f"{cmd}\r".encode("ascii", "ignore")
-            _ferrum_device.write(command)
-            _ferrum_device.flush()
+            device.write(command)
+            device.flush()
         
         # 在鎖外等待響應，避免阻塞監聽線程
         time.sleep(0.1)
@@ -102,11 +132,11 @@ def _send_cmd_with_response(cmd: str, timeout: float = 0.5):
         start = time.time()
         while time.time() - start < timeout:
             # 使用短時間鎖來檢查和讀取數據
-            with _ferrum_lock:
-                if not (_ferrum_device and _ferrum_device.is_open):
+            with device_lock:
+                if not (device and device.is_open):
                     return None
-                if _ferrum_device.in_waiting:
-                    resp += _ferrum_device.read(_ferrum_device.in_waiting)
+                if device.in_waiting:
+                    resp += device.read(device.in_waiting)
             
             # 檢查是否收到完整響應（Ferrum 設備會回顯命令，然後返回結果）
             if resp:
@@ -476,6 +506,111 @@ def disconnect():
             _button_states_cache[i] = False
 
 
+def _connect_role(device_path: str = None, role: str = "mouse"):
+    global _ferrum_device, _ferrum_keyboard_device
+
+    role_norm = str(role).strip().lower()
+    if role_norm == "keyboard":
+        state.keyboard_last_connect_error = ""
+        disconnect_keyboard()
+        state.set_keyboard_connected(False, "Ferrum")
+    else:
+        state.last_connect_error = ""
+        disconnect()
+        state.set_connected(False, "Ferrum")
+
+    selected_port = str(device_path).strip() if device_path else ""
+    if not selected_port:
+        ports = find_ferrum_ports()
+        if not ports:
+            message = "No serial ports found. Please specify a COM port."
+            if role_norm == "keyboard":
+                state.keyboard_last_connect_error = message
+            else:
+                state.last_connect_error = message
+            log_print(f"[ERROR] {message}")
+            return False
+        supported_ports = []
+        other_ports = []
+        for p in ports:
+            port_name, dev_name = p
+            is_supported = any(name in dev_name for _, name in FERRUM_SUPPORTED_DEVICES)
+            if is_supported:
+                supported_ports.append(p)
+            else:
+                other_ports.append(p)
+        sorted_ports = supported_ports + other_ports
+    else:
+        sorted_ports = [(selected_port, "MANUAL")]
+
+    for port_name, dev_name in sorted_ports:
+        for baud in SUPPORTED_BAUD_RATES:
+            candidate = None
+            try:
+                log_print(f"[INFO] Trying Ferrum {role_norm} on {port_name} ({dev_name}) @ {baud}...")
+                candidate = serial.Serial(port_name, baud, timeout=0.1)
+                time.sleep(0.1)
+                try:
+                    candidate.reset_input_buffer()
+                    candidate.reset_output_buffer()
+                    if candidate.in_waiting:
+                        candidate.read(candidate.in_waiting)
+                except Exception:
+                    pass
+
+                if role_norm == "keyboard":
+                    _ferrum_keyboard_device = candidate
+                    state.set_keyboard_connected(True, "Ferrum")
+                    log_print(f"[INFO] Connected keyboard Ferrum on {port_name} at {baud} baud.")
+                else:
+                    _ferrum_device = candidate
+                    state.set_connected(True, "Ferrum")
+                    _start_listener_thread()
+                    log_print(f"[INFO] Connected mouse Ferrum on {port_name} at {baud} baud.")
+                return True
+            except Exception as e:
+                log_print(f"[WARN] Failed Ferrum {role_norm}@{port_name}@{baud}: {e}")
+                if candidate is not None:
+                    try:
+                        candidate.close()
+                    except Exception:
+                        pass
+
+    message = (
+        f"Could not connect to Ferrum device on {selected_port}. Tried baud rates: {SUPPORTED_BAUD_RATES}"
+        if selected_port
+        else "Could not connect to any Ferrum device on available serial ports."
+    )
+    if role_norm == "keyboard":
+        state.keyboard_last_connect_error = message
+        _ferrum_keyboard_device = None
+    else:
+        state.last_connect_error = message
+        _ferrum_device = None
+    log_print(f"[ERROR] {message}")
+    return False
+
+
+def connect(device_path: str = None, connection_type: str = "auto"):
+    return _connect_role(device_path=device_path, role="mouse")
+
+
+def connect_keyboard(device_path: str = None, connection_type: str = "auto"):
+    return _connect_role(device_path=device_path, role="keyboard")
+
+
+def disconnect_keyboard():
+    global _ferrum_keyboard_device
+
+    state.set_keyboard_connected(False, "Ferrum")
+    try:
+        if _ferrum_keyboard_device is not None and _ferrum_keyboard_device.is_open:
+            _ferrum_keyboard_device.close()
+    except Exception:
+        pass
+    _ferrum_keyboard_device = None
+
+
 def is_button_pressed(idx: int) -> bool:
     """
     檢查按鈕是否被按下。
@@ -754,3 +889,78 @@ def test_move():
     """測試滑鼠移動功能"""
     if state.is_connected and state.active_backend == "Ferrum":
         move(100, 100)
+
+
+def _keyboard_session_ready() -> bool:
+    return bool(
+        getattr(state, "keyboard_is_connected", False)
+        and getattr(state, "keyboard_active_backend", "") == "Ferrum"
+        and _ferrum_keyboard_device is not None
+    )
+
+
+def _send_keyboard_cmd_no_wait(cmd: str):
+    _send_cmd_no_wait(cmd, role="keyboard")
+
+
+def _send_keyboard_cmd_with_response(cmd: str, timeout: float = 0.1):
+    return _send_cmd_with_response(cmd, timeout=timeout, role="keyboard")
+
+
+def is_key_pressed(key) -> bool:
+    hid_code = to_hid_code(key)
+    if hid_code is None:
+        return False
+
+    if _keyboard_session_ready():
+        response = _send_keyboard_cmd_with_response(f"key_is_pressed({hid_code})", timeout=0.1)
+        if response:
+            is_pressed = "true" in response.lower() or "1" in response
+        else:
+            with _key_states_lock:
+                is_pressed = _key_states_cache.get(hid_code, False)
+        with _key_states_lock:
+            _key_states_cache[hid_code] = bool(is_pressed)
+        return bool(is_pressed)
+
+    if not state.is_connected or state.active_backend != "Ferrum":
+        return False
+
+    response = _send_cmd_with_response(f"key_is_pressed({hid_code})", timeout=0.1)
+    return bool(response and ("true" in response.lower() or "1" in response))
+
+
+def key_down(key):
+    hid_code = _resolve_hid_key_code(key)
+    if hid_code is None:
+        return
+    if _keyboard_session_ready():
+        _send_keyboard_cmd_no_wait(f"key_press({hid_code})")
+        return
+    if not state.is_connected or state.active_backend != "Ferrum":
+        return
+    _send_cmd_no_wait(f"key_press({hid_code})")
+
+
+def key_up(key):
+    hid_code = _resolve_hid_key_code(key)
+    if hid_code is None:
+        return
+    if _keyboard_session_ready():
+        _send_keyboard_cmd_no_wait(f"key_release({hid_code})")
+        return
+    if not state.is_connected or state.active_backend != "Ferrum":
+        return
+    _send_cmd_no_wait(f"key_release({hid_code})")
+
+
+def key_press(key):
+    hid_code = _resolve_hid_key_code(key)
+    if hid_code is None:
+        return
+    if _keyboard_session_ready():
+        _send_keyboard_cmd_no_wait(f"key_click({hid_code})")
+        return
+    if not state.is_connected or state.active_backend != "Ferrum":
+        return
+    _send_cmd_no_wait(f"key_click({hid_code})")

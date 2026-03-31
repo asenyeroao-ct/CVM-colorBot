@@ -433,6 +433,23 @@ def get_last_connect_error() -> str:
     return state.last_connect_error
 
 
+def get_keyboard_active_backend() -> str:
+    return getattr(state, "keyboard_active_backend", "Follow Mouse API")
+
+
+def get_keyboard_last_connect_error() -> str:
+    return getattr(state, "keyboard_last_connect_error", "")
+
+
+def is_keyboard_backend_connected(mode: str = None) -> bool:
+    target = _resolve_keyboard_backend(mode)
+    if target == "SendInput":
+        return True
+    if bool(getattr(state, "keyboard_is_connected", False)) and get_keyboard_active_backend() == target:
+        return True
+    return bool(state.is_connected and state.active_backend == target)
+
+
 def get_expected_kmnet_dll_name() -> str:
     return NetAPI.get_expected_kmnet_dll_name()
 
@@ -524,6 +541,95 @@ def connect_to_ferrum(device_path=None, connection_type=None) -> bool:
     ok = FerrumAPI.connect(device_path=selected_device_path if selected_device_path else None, connection_type="serial")
     _sync_public_state()
     return ok
+
+
+def connect_keyboard_backend(mode: str, ferrum_device_path=None, ferrum_connection_type=None):
+    target_mode = _normalize_keyboard_api_name(mode)
+    if target_mode == "Follow Mouse API":
+        state.set_keyboard_connected(False, "Follow Mouse API")
+        state.keyboard_last_connect_error = ""
+        return True, None
+    if target_mode == "SendInput":
+        state.set_keyboard_connected(True, "SendInput")
+        state.keyboard_last_connect_error = ""
+        return True, None
+    if target_mode == "Ferrum":
+        selected_device_path, selected_connection_type = _get_ferrum_settings(
+            device_path=ferrum_device_path,
+            connection_type=ferrum_connection_type,
+        )
+        ok = FerrumAPI.connect_keyboard(
+            device_path=selected_device_path if selected_device_path else None,
+            connection_type=selected_connection_type,
+        )
+        if ok:
+            state.set_keyboard_connected(True, "Ferrum")
+            state.keyboard_last_connect_error = ""
+            return True, None
+        return False, (state.keyboard_last_connect_error or "Ferrum keyboard backend connect failed")
+    state.keyboard_last_connect_error = f"Keyboard backend {target_mode} does not support an independent connection yet."
+    state.set_keyboard_connected(False, target_mode)
+    return False, state.keyboard_last_connect_error
+
+
+def connect_ferrum_mode(
+    ferrum_mode: str,
+    ferrum_device_path=None,
+    ferrum_connection_type=None,
+    ferrum_net_ip=None,
+    ferrum_net_port=None,
+    ferrum_net_uuid=None,
+    ferrum_dhz_ip=None,
+    ferrum_dhz_port=None,
+    ferrum_dhz_random=None,
+):
+    selected_mode = str(ferrum_mode or "KmAPI").strip()
+    try:
+        from src.utils.config import config
+
+        config.mouse_api = "Ferrum"
+        config.ferrum_mode = selected_mode
+    except Exception:
+        pass
+
+    _disconnect_all_backends()
+    state.set_connected(False, "Ferrum")
+    _sync_public_state()
+
+    if selected_mode == "NetAPI":
+        ok = connect_to_net(ip=ferrum_net_ip, port=ferrum_net_port, uuid=ferrum_net_uuid)
+        if ok:
+            try:
+                from src.utils.config import config
+
+                config.mouse_api = "Ferrum"
+            except Exception:
+                pass
+            return True, None
+        return False, (state.last_connect_error or "Ferrum NetAPI connect failed")
+
+    if selected_mode == "DhzAPI":
+        ok = connect_to_dhz(ip=ferrum_dhz_ip, port=ferrum_dhz_port, random_shift=ferrum_dhz_random)
+        if ok:
+            try:
+                from src.utils.config import config
+
+                config.mouse_api = "Ferrum"
+            except Exception:
+                pass
+            return True, None
+        return False, (state.last_connect_error or "Ferrum DhzAPI connect failed")
+
+    ok = connect_to_ferrum(device_path=ferrum_device_path, connection_type=ferrum_connection_type)
+    if ok:
+        try:
+            from src.utils.config import config
+
+            config.mouse_api = "Ferrum"
+        except Exception:
+            pass
+        return True, None
+    return False, (state.last_connect_error or "Ferrum KmAPI connect failed")
 
 
 def connect_to_makcu():
@@ -745,6 +851,9 @@ def is_key_pressed(key) -> bool:
     if keyboard_backend == "SendInput":
         return SendInputAPI.local_is_key_pressed(key)
 
+    if keyboard_backend == "Ferrum" and bool(getattr(state, "keyboard_is_connected", False)) and get_keyboard_active_backend() == "Ferrum":
+        return FerrumAPI.is_key_pressed(key)
+
     if not state.is_connected:
         _sync_public_state()
         return False
@@ -774,6 +883,10 @@ def key_down(key):
     keyboard_backend = _resolve_keyboard_backend()
     if keyboard_backend == "SendInput":
         SendInputAPI.local_key_down(key)
+        return
+
+    if keyboard_backend == "Ferrum" and bool(getattr(state, "keyboard_is_connected", False)) and get_keyboard_active_backend() == "Ferrum":
+        FerrumAPI.key_down(key)
         return
 
     if not state.is_connected:
@@ -808,6 +921,10 @@ def key_up(key):
         SendInputAPI.local_key_up(key)
         return
 
+    if keyboard_backend == "Ferrum" and bool(getattr(state, "keyboard_is_connected", False)) and get_keyboard_active_backend() == "Ferrum":
+        FerrumAPI.key_up(key)
+        return
+
     if not state.is_connected:
         _sync_public_state()
         return
@@ -838,6 +955,10 @@ def key_press(key):
     keyboard_backend = _resolve_keyboard_backend()
     if keyboard_backend == "SendInput":
         SendInputAPI.local_key_press(key)
+        return
+
+    if keyboard_backend == "Ferrum" and bool(getattr(state, "keyboard_is_connected", False)) and get_keyboard_active_backend() == "Ferrum":
+        FerrumAPI.key_press(key)
         return
 
     if not state.is_connected:
