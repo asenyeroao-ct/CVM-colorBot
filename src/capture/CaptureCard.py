@@ -24,6 +24,7 @@ class CaptureCardCamera:
         self.set_convert_rgb = bool(getattr(config, "capture_card_set_convert_rgb", True))
         self.probe_frames = max(1, int(getattr(config, "capture_card_probe_frames", 3)))
         self.debug_color_log = bool(getattr(config, "capture_card_debug_color_log", False))
+        self.buffer_size_mb = max(1, int(getattr(config, "capture_card_buffer_size_mb", 64)))
 
         self.config = config
         self.cap = None
@@ -31,7 +32,8 @@ class CaptureCardCamera:
         self.backend_used = None
         self.active_fourcc = None
 
-        preferred_backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
+        # 固定優先使用 OpenCV DirectShow backend; fallback 只保底兼容性.
+        preferred_backends = [cv2.CAP_DSHOW, cv2.CAP_ANY]
 
         for backend in preferred_backends:
             self.cap = cv2.VideoCapture(self.device_index, backend)
@@ -115,6 +117,7 @@ class CaptureCardCamera:
             # except Exception as e:
             #     log_print(f"[CaptureCard] Failed to set buffer size: {e}")
 
+            self._try_set_buffer_size()
             self._try_enable_hardware_acceleration()
 
             if backend == cv2.CAP_DSHOW:
@@ -127,6 +130,7 @@ class CaptureCardCamera:
             actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
             log_print(f"[CaptureCard] Successfully opened camera {self.device_index} with backend {backend}")
             log_print(f"[CaptureCard] Resolution: {self.frame_width}x{self.frame_height}, FPS: {actual_fps}")
+            log_print(f"[CaptureCard] Requested buffer size: {self.buffer_size_mb} MB")
             if self.active_fourcc:
                 log_print(f"[CaptureCard] Active fourcc: {self.active_fourcc}")
             break
@@ -157,6 +161,22 @@ class CaptureCardCamera:
                     pass
         except Exception as e:
             log_print(f"[CaptureCard] Hardware acceleration check failed: {e}")
+
+    def _try_set_buffer_size(self):
+        """嘗試設定 buffer; OpenCV 多數 backend 接受的是 queue depth, not exact bytes."""
+        if self.cap is None or not hasattr(cv2, "CAP_PROP_BUFFERSIZE"):
+            return
+
+        try:
+            requested_units = int(self.buffer_size_mb)
+            success = self.cap.set(cv2.CAP_PROP_BUFFERSIZE, requested_units)
+            actual_value = self.cap.get(cv2.CAP_PROP_BUFFERSIZE)
+            log_print(
+                f"[CaptureCard] Buffer request={requested_units} "
+                f"(target {self.buffer_size_mb}MB), set_ok={success}, actual={actual_value}"
+            )
+        except Exception as e:
+            log_print(f"[CaptureCard] Failed to set buffer size: {e}")
 
     @staticmethod
     def _decode_fourcc_int(fourcc_int: int) -> str:
@@ -393,6 +413,7 @@ def get_default_capture_card_config() -> dict:
         "capture_card_set_convert_rgb": True,
         "capture_card_probe_frames": 3,
         "capture_card_debug_color_log": False,
+        "capture_card_buffer_size_mb": 64,
         "capture_range_x": 0,
         "capture_range_y": 0,
         "capture_offset_x": 0,
@@ -409,6 +430,7 @@ def apply_capture_card_config(config, **kwargs):
         "capture_device_index", "capture_fourcc_preference",
         "capture_card_force_bgr", "capture_card_set_convert_rgb",
         "capture_card_probe_frames", "capture_card_debug_color_log",
+        "capture_card_buffer_size_mb",
         "capture_range_x", "capture_range_y",
         "capture_offset_x", "capture_offset_y",
         "capture_center_offset_x", "capture_center_offset_y"

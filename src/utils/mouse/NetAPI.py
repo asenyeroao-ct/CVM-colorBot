@@ -20,21 +20,39 @@ def _get_kmnet_dll_dir() -> str:
     return os.path.join(os.path.dirname(__file__), "API", "Net", "dll")
 
 
+def _get_compatible_kmnet_candidates(dll_dir: str):
+    expected_name = get_expected_kmnet_dll_name()
+    expected_path = os.path.join(dll_dir, expected_name)
+    if os.path.exists(expected_path):
+        return [expected_path]
+
+    legacy_name = f"kmNet{sys.version_info.major}_{sys.version_info.minor}.pyd"
+    legacy_path = os.path.join(dll_dir, legacy_name)
+    if os.path.exists(legacy_path):
+        return [legacy_path]
+
+    return []
+
+
 def _load_module():
     global _loaded_module_path
     if state.kmnet_module is not None:
         return state.kmnet_module
 
     dll_dir = _get_kmnet_dll_dir()
-    expected = os.path.join(dll_dir, get_expected_kmnet_dll_name())
-
-    candidates = []
-    if os.path.exists(expected):
-        candidates.append(expected)
-    candidates.extend(sorted(glob.glob(os.path.join(dll_dir, "kmNet*.pyd"))))
+    candidates = _get_compatible_kmnet_candidates(dll_dir)
 
     if not candidates:
-        state.last_connect_error = f"kmNet dll not found in: {dll_dir}"
+        available = sorted(os.path.basename(p) for p in glob.glob(os.path.join(dll_dir, "kmNet*.pyd")))
+        expected_name = get_expected_kmnet_dll_name()
+        legacy_name = f"kmNet{sys.version_info.major}_{sys.version_info.minor}.pyd"
+        if available:
+            state.last_connect_error = (
+                f"No compatible kmNet module for Python {sys.version_info.major}.{sys.version_info.minor}. "
+                f"Expected {expected_name} or {legacy_name}. Available: {', '.join(available)}"
+            )
+        else:
+            state.last_connect_error = f"kmNet dll not found in: {dll_dir}"
         return None
 
     seen = set()

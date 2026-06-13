@@ -303,6 +303,7 @@ class ViewerApp(ctk.CTk):
         self._teleport_stream_display_to_key = {}
         self.saved_ndi_source = getattr(config, "last_ndi_source", None)
         self.saved_mouse_api = getattr(config, "mouse_api", "Serial")
+        self.saved_keyboard_api_enabled = bool(getattr(config, "keyboard_api_enabled", False))
         self.saved_keyboard_api = getattr(config, "keyboard_api", "Follow Mouse API")
         self.saved_net_ip = getattr(config, "net_ip", "192.168.2.188")
         self.saved_net_port = getattr(config, "net_port", "6234")
@@ -888,6 +889,9 @@ class ViewerApp(ctk.CTk):
         ]
         current_keyboard_api = str(getattr(config, "keyboard_api", "Follow Mouse API")).strip()
         normalized_keyboard_api = self._normalize_keyboard_api_name(current_keyboard_api)
+        self.saved_keyboard_api_enabled = bool(
+            getattr(config, "keyboard_api_enabled", self.saved_keyboard_api_enabled)
+        )
         self.saved_keyboard_api = normalized_keyboard_api
 
         serial_mode = str(getattr(config, "serial_port_mode", self.saved_serial_port_mode)).strip().lower()
@@ -1010,6 +1014,20 @@ class ViewerApp(ctk.CTk):
             text_color=COLOR_TEXT,
             anchor="w",
         ).pack(fill="x", padx=12, pady=(10, 2))
+        self.var_keyboard_api_enabled = tk.BooleanVar(value=self.saved_keyboard_api_enabled)
+        self.keyboard_enable_checkbox = ctk.CTkCheckBox(
+            self.keyboard_hardware_frame,
+            text="Enable Keyboard API",
+            variable=self.var_keyboard_api_enabled,
+            command=self._on_keyboard_api_enabled_changed,
+            font=FONT_MAIN,
+            text_color=COLOR_TEXT,
+            fg_color=COLOR_ACCENT,
+            hover_color=COLOR_ACCENT_HOVER,
+            border_color=COLOR_HARDWARE_PANEL_BORDER,
+            checkmark_color=COLOR_TEXT,
+        )
+        self.keyboard_enable_checkbox.pack(anchor="w", padx=12, pady=(0, 8))
         self.keyboard_api_option = self._add_hardware_option_row_in_frame(
             self.keyboard_hardware_frame,
             "Input API",
@@ -1815,12 +1833,43 @@ class ViewerApp(ctk.CTk):
         if str(getattr(self, "_active_tab_name", "")) == "Trigger":
             self._show_tb_tab()
 
+    def _on_keyboard_api_enabled_changed(self):
+        enabled = bool(self.var_keyboard_api_enabled.get())
+        self.saved_keyboard_api_enabled = enabled
+        config.keyboard_api_enabled = enabled
+        if enabled:
+            self._set_status_indicator("Status: Keyboard API enabled", COLOR_TEXT_DIM)
+        else:
+            self._set_status_indicator("Status: Keyboard API disabled; mouse-only input active", COLOR_TEXT_DIM)
+        self._update_keyboard_api_ui()
+        self._update_hardware_status_ui()
+
+        if str(getattr(self, "_active_tab_name", "")) == "Trigger":
+            self._show_tb_tab()
+
     def _update_keyboard_api_ui(self):
         if not hasattr(self, "keyboard_content_frame") or not self.keyboard_content_frame.winfo_exists():
             return
 
         for widget in self.keyboard_content_frame.winfo_children():
             widget.destroy()
+
+        keyboard_enabled = bool(getattr(config, "keyboard_api_enabled", False))
+
+        if hasattr(self, "keyboard_api_option") and self.keyboard_api_option.winfo_exists():
+            self.keyboard_api_option.configure(state="normal" if keyboard_enabled else "disabled")
+
+        if not keyboard_enabled:
+            ctk.CTkLabel(
+                self.keyboard_content_frame,
+                text="Keyboard API is disabled. Keybind capture and hardware keyboard output use mouse-only mode until this checkbox is enabled.",
+                font=("Roboto", 9),
+                text_color=COLOR_TEXT_DIM,
+                justify="left",
+                wraplength=720,
+                anchor="w",
+            ).pack(fill="x", pady=(0, 2))
+            return
 
         selected_keyboard_api = self._normalize_keyboard_api_name(
             getattr(self, "saved_keyboard_api", getattr(config, "keyboard_api", "Follow Mouse API"))
@@ -1954,6 +2003,10 @@ class ViewerApp(ctk.CTk):
     def _connect_keyboard_api(self):
         if getattr(self, "_keyboard_api_connecting", False):
             self._set_status_indicator("Status: Keyboard API connecting...", COLOR_TEXT_DIM)
+            return
+
+        if not bool(getattr(config, "keyboard_api_enabled", False)):
+            self._set_status_indicator("Status: Enable Keyboard API first", COLOR_WARNING)
             return
 
         selected_keyboard_api = self._normalize_keyboard_api_name(
@@ -5852,8 +5905,9 @@ class ViewerApp(ctk.CTk):
             return False
 
     def _get_binding_capture_candidates(self):
+        keyboard_enabled = bool(getattr(config, "keyboard_api_enabled", False))
         mode = getattr(config, "keyboard_api", "Follow Mouse API")
-        keyboard_supported = bool(self._supports_keyboard_state(mode) or USER32 is not None)
+        keyboard_supported = bool(keyboard_enabled and (self._supports_keyboard_state(mode) or USER32 is not None))
 
         # Keep deterministic order: mouse first, then keyboard.
         candidates = list(BUTTONS.values())
@@ -7495,6 +7549,8 @@ class ViewerApp(ctk.CTk):
             return normalized in {"SendInput", "Net", "KmboxA", "DHZ", "Ferrum", "MakcuController"}
 
     def _supports_keyboard_state(self, mode=None) -> bool:
+        if not bool(getattr(config, "keyboard_api_enabled", False)):
+            return False
         selected_mode = mode if mode is not None else getattr(config, "keyboard_api", "Follow Mouse API")
         if str(selected_mode).strip().lower() in {"", "follow", "follow mouse api", "follow_mouse_api", "follow-mouse-api"}:
             selected_mode = getattr(config, "mouse_api", "Serial")
@@ -7523,11 +7579,13 @@ class ViewerApp(ctk.CTk):
 
     def _build_hardware_details_text(self, mode: str, connected: bool) -> str:
         auto_connect = bool(getattr(config, "auto_connect_mouse_api", False))
+        keyboard_enabled = bool(getattr(config, "keyboard_api_enabled", False))
         keyboard_api = str(getattr(config, "keyboard_api", "Follow Mouse API"))
         keyboard_connected = False
-        keyboard_backend = keyboard_api
+        keyboard_backend = keyboard_api if keyboard_enabled else "Disabled"
         details = [
             f"Backend: {mode}",
+            f"Keyboard Enabled: {'Yes' if keyboard_enabled else 'No'}",
             f"Keyboard API: {keyboard_api}",
             f"Connected: {'Yes' if connected else 'No'}",
             f"Auto Connect On Startup: {'Yes' if auto_connect else 'No'}",
@@ -7542,8 +7600,9 @@ class ViewerApp(ctk.CTk):
             from src.utils.mouse import NetAPI as net_api_module
             from src.utils.mouse import KmboxAAPI as kmboxa_api_module
             from src.utils.mouse import state as mouse_state
-            keyboard_connected = bool(mouse_backend.is_keyboard_backend_connected())
-            keyboard_backend = mouse_backend.get_keyboard_active_backend()
+            if keyboard_enabled:
+                keyboard_connected = bool(mouse_backend.is_keyboard_backend_connected())
+                keyboard_backend = mouse_backend.get_keyboard_active_backend()
         except Exception:
             pass
 

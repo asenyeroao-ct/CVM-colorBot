@@ -59,6 +59,7 @@ class Config:
         self.in_game_sens = 0.235
         self.mouse_dpi = 800
         self.mouse_api = "Serial"  # Serial, Arduino, SendInput, Net, KmboxA, MakV2, MakcuController, MakxdMakAPI, DHZ
+        self.keyboard_api_enabled = False
         self.keyboard_api = "Follow Mouse API"  # Follow Mouse API, SendInput, Serial, Net...
         self.auto_connect_mouse_api = False
         self.serial_auto_switch_4m = False
@@ -394,6 +395,7 @@ class Config:
         self.capture_card_set_convert_rgb = True
         self.capture_card_probe_frames = 3
         self.capture_card_debug_color_log = False
+        self.capture_card_buffer_size_mb = 64
         self.capture_gst_candidate_probe_timeout_ms = 500.0
         self.capture_gst_strict_candidate_probe = False
         self.capture_gst_log_symbol_validation = False
@@ -475,6 +477,7 @@ class Config:
             "in_game_sens": self.in_game_sens,
             "mouse_dpi": self.mouse_dpi,
             "mouse_api": self.mouse_api,
+            "keyboard_api_enabled": self.keyboard_api_enabled,
             "keyboard_api": self.keyboard_api,
             "auto_connect_mouse_api": self.auto_connect_mouse_api,
             "serial_auto_switch_4m": self.serial_auto_switch_4m,
@@ -791,6 +794,7 @@ class Config:
             "capture_card_set_convert_rgb": self.capture_card_set_convert_rgb,
             "capture_card_probe_frames": self.capture_card_probe_frames,
             "capture_card_debug_color_log": self.capture_card_debug_color_log,
+            "capture_card_buffer_size_mb": self.capture_card_buffer_size_mb,
             "capture_gst_candidate_probe_timeout_ms": self.capture_gst_candidate_probe_timeout_ms,
             "capture_gst_strict_candidate_probe": self.capture_gst_strict_candidate_probe,
             "capture_gst_log_symbol_validation": self.capture_gst_log_symbol_validation,
@@ -824,6 +828,7 @@ class Config:
         keyboard_api = str(getattr(self, "keyboard_api", "Follow Mouse API")).strip()
         if not keyboard_api:
             keyboard_api = "Follow Mouse API"
+        self.keyboard_api_enabled = bool(getattr(self, "keyboard_api_enabled", False))
         self.keyboard_api = keyboard_api
         self.serial_auto_switch_4m = bool(getattr(self, "serial_auto_switch_4m", False))
         self.serial_port = str(getattr(self, "serial_port", "")).strip()
@@ -831,6 +836,12 @@ class Config:
         self.teleport_host = str(getattr(self, "teleport_host", "")).strip()
         self.teleport_port = str(getattr(self, "teleport_port", "0")).strip() or "0"
         self.teleport_stream_key = str(getattr(self, "teleport_stream_key", "")).strip()
+        try:
+            self.capture_card_buffer_size_mb = max(
+                1, int(getattr(self, "capture_card_buffer_size_mb", 64))
+            )
+        except Exception:
+            self.capture_card_buffer_size_mb = 64
         try:
             self.arduino_baud = int(getattr(self, "arduino_baud", 115200))
         except Exception:

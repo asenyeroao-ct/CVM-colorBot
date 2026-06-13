@@ -75,6 +75,18 @@ def _set_role_error(role: str, message: str):
         state.last_connect_error = str(message or "")
 
 
+def _normalize_serial_port_name(port_value: str) -> str:
+    """將手動輸入的 Windows serial port 正規化成 COMx / Normalize manual COM input."""
+    raw = str(port_value or "").strip()
+    if not raw:
+        return ""
+    if raw.upper().startswith("COM"):
+        return raw.upper()
+    if raw.isdigit():
+        return f"COM{raw}"
+    return raw
+
+
 def _send_cmd_no_wait(cmd: str, role: str = "mouse"):
     """
     通過串口發送命令（不等待響應）。
@@ -519,7 +531,7 @@ def _connect_role(device_path: str = None, role: str = "mouse"):
         disconnect()
         state.set_connected(False, "Ferrum")
 
-    selected_port = str(device_path).strip() if device_path else ""
+    selected_port = _normalize_serial_port_name(device_path)
     if not selected_port:
         ports = find_ferrum_ports()
         if not ports:

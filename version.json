@@ -1,5 +1,5 @@
 {
-    "version": "2.10.1",
-    "release_date": "2026-03-31",
-    "changelog": "Refined Hardware API styling to use stronger gray-scale emphasis within the existing dark theme."
+    "version": "2.10.2",
+    "release_date": "2026-06-14",
+    "changelog": "Defaulted keyboard hardware API to opt-in checkbox, improved capture card DShow buffer handling, and hardened Net/Ferrum hardware connection behavior."
 }
