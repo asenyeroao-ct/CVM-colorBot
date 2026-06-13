@@ -5,7 +5,10 @@ Contains capture-card specific capture and frame normalization logic.
 
 from src.utils.debug_logger import log_print
 import cv2
-from typing import Optional, Tuple
+import ctypes
+import json
+import subprocess
+from typing import Dict, List, Optional, Tuple
 
 
 class CaptureCardCamera:
@@ -16,9 +19,8 @@ class CaptureCardCamera:
 
         self.frame_width = int(getattr(config, "capture_width", 1920))
         self.frame_height = int(getattr(config, "capture_height", 1080))
-        self.target_fps = float(getattr(config, "capture_fps", 240))
         self.device_index = int(getattr(config, "capture_device_index", 0))
-        self.fourcc_pref = list(getattr(config, "capture_fourcc_preference", ["NV12", "YUY2", "MJPG"]))
+        self.fourcc_pref = list(getattr(config, "capture_fourcc_preference", ["MJPG", "NV12", "YUY2", "YUYV", "BGR3"]))
 
         self.force_bgr = bool(getattr(config, "capture_card_force_bgr", True))
         self.set_convert_rgb = bool(getattr(config, "capture_card_set_convert_rgb", True))
@@ -66,30 +68,8 @@ class CaptureCardCamera:
                         continue
 
                     log_print(f"[CaptureCard] Set fourcc to {fourcc}")
-                    self.cap.set(cv2.CAP_PROP_FPS, float(self.target_fps))
-
                     actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
-                    fps_diff = abs(actual_fps - self.target_fps)
-                    if fps_diff > 1.0:
-                        log_print(
-                            f"[CaptureCard] Format {fourcc}: Requested {self.target_fps} FPS, "
-                            f"but got {actual_fps} FPS"
-                        )
-                        if actual_fps < self.target_fps * 0.5:
-                            log_print(
-                                f"[CaptureCard] Format {fourcc} doesn't support "
-                                f"{self.target_fps} FPS, trying next format..."
-                            )
-                            continue
-                        log_print(
-                            f"[CaptureCard] FPS close enough: {actual_fps} FPS "
-                            f"(target: {self.target_fps})"
-                        )
-                    else:
-                        log_print(
-                            f"[CaptureCard] FPS set successfully: {actual_fps} FPS "
-                            f"(target: {self.target_fps})"
-                        )
+                    log_print(f"[CaptureCard] Format {fourcc}: device reports {actual_fps} FPS")
 
                     if not self._probe_frame_format(fourcc):
                         log_print(f"[CaptureCard] Format {fourcc} failed probe validation, trying next format...")
@@ -103,7 +83,7 @@ class CaptureCardCamera:
                     continue
 
             if not config_success:
-                log_print(f"[CaptureCard] Warning: Could not find a format that supports {self.target_fps} FPS")
+                log_print("[CaptureCard] Warning: Could not validate a preferred format; using device default.")
                 actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
                 log_print(f"[CaptureCard] Using available FPS: {actual_fps}")
                 self.active_fourcc = self._read_active_fourcc_label()
@@ -380,11 +360,7 @@ def validate_capture_card_config(config) -> Tuple[bool, Optional[str]]:
         if height < 240 or height > 4320:
             return False, f"Capture height {height} is out of valid range (240-4320)"
 
-        fps = float(getattr(config, "capture_fps", 240))
-        if fps < 1 or fps > 300:
-            return False, f"Capture FPS {fps} is out of valid range (1-300)"
-
-        fourcc_list = getattr(config, "capture_fourcc_preference", ["NV12", "YUY2", "MJPG"])
+        fourcc_list = getattr(config, "capture_fourcc_preference", ["MJPG", "NV12", "YUY2", "YUYV", "BGR3"])
         if not isinstance(fourcc_list, list) or len(fourcc_list) == 0:
             return False, "FourCC preference must be a non-empty list"
 
@@ -401,6 +377,250 @@ def create_capture_card_camera(config, region=None):
     return CaptureCardCamera(config, region)
 
 
+SUPPORTED_CAPTURE_CARD_FORMATS = ["MJPG", "NV12", "YUY2", "YUYV", "BGR3"]
+
+CAPTURE_NAME_KEYWORDS = (
+    "capture",
+    "camera",
+    "webcam",
+    "video",
+    "avermedia",
+    "elgato",
+    "magewell",
+    "cam link",
+    "live gamer",
+    "usb video",
+    "hdmi",
+)
+
+
+def _enumerate_windows_capture_device_names(max_index: int = 10) -> Dict[int, str]:
+    """Enumerate Windows capture device friendly names via avicap32."""
+    names: Dict[int, str] = {}
+    try:
+        cap_get_driver_description = ctypes.windll.avicap32.capGetDriverDescriptionW
+        cap_get_driver_description.argtypes = [
+            ctypes.c_uint,
+            ctypes.c_wchar_p,
+            ctypes.c_int,
+            ctypes.c_wchar_p,
+            ctypes.c_int,
+        ]
+        cap_get_driver_description.restype = ctypes.c_bool
+    except Exception:
+        return names
+
+    for device_index in range(max(0, int(max_index)) + 1):
+        name_buffer = ctypes.create_unicode_buffer(256)
+        version_buffer = ctypes.create_unicode_buffer(256)
+        try:
+            ok = cap_get_driver_description(
+                int(device_index),
+                name_buffer,
+                len(name_buffer),
+                version_buffer,
+                len(version_buffer),
+            )
+            if ok and str(name_buffer.value).strip():
+                names[int(device_index)] = str(name_buffer.value).strip()
+        except Exception:
+            continue
+    return names
+
+
+def _enumerate_windows_pnp_capture_names() -> List[str]:
+    """Ask Windows for likely capture-device friendly names / 取 Windows 硬體友善名稱."""
+    try:
+        ps_script = r"""
+$devices = Get-CimInstance Win32_PnPEntity |
+  Where-Object {
+    $_.PNPClass -eq 'MEDIA' -or $_.Service -match 'usbvideo|ksthunk|avstream'
+  } |
+  Select-Object Name, PNPClass, Service, Manufacturer
+$devices | ConvertTo-Json -Compress
+"""
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command", ps_script],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+        if result.returncode != 0 or not str(result.stdout).strip():
+            return []
+
+        raw = json.loads(result.stdout)
+        items = raw if isinstance(raw, list) else [raw]
+        names: List[str] = []
+        seen = set()
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("Name", "")).strip()
+            if not name:
+                continue
+            lowered = name.lower()
+            if not any(keyword in lowered for keyword in CAPTURE_NAME_KEYWORDS):
+                continue
+            if any(skip in lowered for skip in ("audio", "proxy", "wave extensible", "voicemeeter")):
+                continue
+            if name in seen:
+                continue
+            seen.add(name)
+            names.append(name)
+        return names
+    except Exception:
+        return []
+
+
+def _decode_fourcc_value(fourcc_value) -> str:
+    try:
+        val = int(fourcc_value)
+        return "".join(chr((val >> (8 * i)) & 0xFF) for i in range(4)).strip().upper()
+    except Exception:
+        return "UNKN"
+
+
+def enumerate_capture_card_devices(max_index: int = 10) -> List[Dict[str, str]]:
+    """Enumerate likely OpenCV DShow capture devices / 掃描可用 capture card 裝置."""
+    devices: List[Dict[str, str]] = []
+    upper = max(0, int(max_index))
+    device_names = _enumerate_windows_capture_device_names(upper)
+    pnp_capture_names = _enumerate_windows_pnp_capture_names()
+    pnp_name_cursor = 0
+
+    for device_index in range(upper + 1):
+        cap = None
+        try:
+            cap = cv2.VideoCapture(device_index, cv2.CAP_DSHOW)
+            if not cap or not cap.isOpened():
+                continue
+
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+            fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+            name = device_names.get(device_index, "").strip()
+            if not name or "microsoft wdm image capture" in name.lower():
+                if pnp_name_cursor < len(pnp_capture_names):
+                    name = str(pnp_capture_names[pnp_name_cursor]).strip()
+                    pnp_name_cursor += 1
+            if not name:
+                name = f"Device {device_index}"
+            devices.append(
+                {
+                    "index": str(device_index),
+                    "name": str(name),
+                    "label": f"{name} [#{device_index}]",
+                    "summary": f"{width}x{height} @ {fps:.2f} FPS",
+                }
+            )
+        except Exception:
+            continue
+        finally:
+            if cap is not None:
+                try:
+                    cap.release()
+                except Exception:
+                    pass
+
+    return devices
+
+
+def probe_capture_card_device(
+    device_index: int,
+    widths: Optional[List[int]] = None,
+    heights: Optional[List[int]] = None,
+    fps_values: Optional[List[float]] = None,
+    fourcc_values: Optional[List[str]] = None,
+) -> Dict[str, object]:
+    """Probe a capture device for resolution/FPS/fourcc support / 自動探測裝置能力."""
+    result: Dict[str, object] = {
+        "device_index": int(device_index),
+        "success": False,
+        "backend": "DShow",
+        "formats": [],
+        "message": "",
+    }
+
+    cap = None
+    try:
+        cap = cv2.VideoCapture(int(device_index), cv2.CAP_DSHOW)
+        if not cap or not cap.isOpened():
+            result["message"] = f"Failed to open device {device_index} with DShow."
+            return result
+
+        widths = widths or [3840, 2560, 1920, 1600, 1280, 1024, 960, 800, 640]
+        heights = heights or [2160, 1440, 1080, 900, 720, 768, 600, 480]
+        fps_values = fps_values or [240.0, 144.0, 120.0, 100.0, 90.0, 75.0, 60.0, 50.0, 30.0]
+        fourcc_values = fourcc_values or SUPPORTED_CAPTURE_CARD_FORMATS
+
+        discovered = []
+        seen = set()
+
+        for fourcc in fourcc_values:
+            try:
+                if len(str(fourcc)) != 4:
+                    continue
+                fourcc_name = str(fourcc).upper()
+                fourcc_code = cv2.VideoWriter_fourcc(*fourcc_name)
+                cap.set(cv2.CAP_PROP_FOURCC, fourcc_code)
+                actual_fourcc = _decode_fourcc_value(cap.get(cv2.CAP_PROP_FOURCC))
+                if actual_fourcc not in {fourcc_name, "BGR3"}:
+                    continue
+
+                for width, height in (
+                    (3840, 2160),
+                    (2560, 1440),
+                    (1920, 1080),
+                    (1600, 900),
+                    (1280, 720),
+                    (1024, 768),
+                    (800, 600),
+                    (640, 480),
+                ):
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(width))
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(height))
+                    actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+                    actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+                    if actual_width <= 0 or actual_height <= 0:
+                        continue
+
+                    for fps in fps_values:
+                        cap.set(cv2.CAP_PROP_FPS, float(fps))
+                        actual_fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+                        key = (actual_width, actual_height, round(actual_fps, 2), actual_fourcc)
+                        if actual_fps <= 0 or key in seen:
+                            continue
+                        seen.add(key)
+                        discovered.append(
+                            {
+                                "width": actual_width,
+                                "height": actual_height,
+                                "fps": round(actual_fps, 2),
+                                "format": actual_fourcc,
+                            }
+                        )
+            except Exception:
+                continue
+
+        discovered.sort(key=lambda item: (-int(item["width"]) * int(item["height"]), -float(item["fps"]), str(item["format"])))
+        result["success"] = bool(discovered)
+        result["formats"] = discovered
+        result["message"] = (
+            f"Detected {len(discovered)} mode(s)." if discovered else "No supported modes detected."
+        )
+        return result
+    except Exception as e:
+        result["message"] = str(e)
+        return result
+    finally:
+        if cap is not None:
+            try:
+                cap.release()
+            except Exception:
+                pass
+
+
 def get_default_capture_card_config() -> dict:
     """Get default capture-card config dict."""
     return {
@@ -408,7 +628,7 @@ def get_default_capture_card_config() -> dict:
         "capture_height": 1080,
         "capture_fps": 240,
         "capture_device_index": 0,
-        "capture_fourcc_preference": ["NV12", "YUY2", "MJPG"],
+        "capture_fourcc_preference": ["MJPG", "NV12", "YUY2", "YUYV", "BGR3"],
         "capture_card_force_bgr": True,
         "capture_card_set_convert_rgb": True,
         "capture_card_probe_frames": 3,

@@ -570,15 +570,34 @@ def _connect_role(device_path: str = None, role: str = "mouse"):
                 except Exception:
                     pass
 
+                is_ferrum, version_response = _test_ferrum_device(candidate, timeout=0.5)
+                if not is_ferrum:
+                    log_print(
+                        f"[WARN] Port {port_name} opened at {baud} but did not respond as Ferrum. "
+                        f"Response: {version_response!r}"
+                    )
+                    try:
+                        candidate.close()
+                    except Exception:
+                        pass
+                    candidate = None
+                    continue
+
                 if role_norm == "keyboard":
                     _ferrum_keyboard_device = candidate
                     state.set_keyboard_connected(True, "Ferrum")
-                    log_print(f"[INFO] Connected keyboard Ferrum on {port_name} at {baud} baud.")
+                    log_print(
+                        f"[INFO] Connected keyboard Ferrum on {port_name} at {baud} baud. "
+                        f"Version response: {version_response!r}"
+                    )
                 else:
                     _ferrum_device = candidate
                     state.set_connected(True, "Ferrum")
                     _start_listener_thread()
-                    log_print(f"[INFO] Connected mouse Ferrum on {port_name} at {baud} baud.")
+                    log_print(
+                        f"[INFO] Connected mouse Ferrum on {port_name} at {baud} baud. "
+                        f"Version response: {version_response!r}"
+                    )
                 return True
             except Exception as e:
                 log_print(f"[WARN] Failed Ferrum {role_norm}@{port_name}@{baud}: {e}")

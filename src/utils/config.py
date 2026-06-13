@@ -390,7 +390,7 @@ class Config:
         self.capture_height = 1080
         self.capture_fps = 240
         self.capture_gst_device_path = ""
-        self.capture_fourcc_preference = ["NV12", "YUY2", "MJPG"]
+        self.capture_fourcc_preference = ["MJPG", "NV12", "YUY2", "YUYV", "BGR3"]
         self.capture_card_force_bgr = True
         self.capture_card_set_convert_rgb = True
         self.capture_card_probe_frames = 3

@@ -301,6 +301,7 @@ class ViewerApp(ctk.CTk):
         self.saved_teleport_port = str(getattr(config, "teleport_port", "0"))
         self.saved_teleport_stream_key = str(getattr(config, "teleport_stream_key", ""))
         self._teleport_stream_display_to_key = {}
+        self._capture_card_display_to_index = {}
         self.saved_ndi_source = getattr(config, "last_ndi_source", None)
         self.saved_mouse_api = getattr(config, "mouse_api", "Serial")
         self.saved_keyboard_api_enabled = bool(getattr(config, "keyboard_api_enabled", False))
@@ -3011,16 +3012,67 @@ class ViewerApp(ctk.CTk):
             # CaptureCard Controls (shared UI for both OpenCV and GStreamer)
             self._add_subtitle_in_frame(self.capture_content_frame, "CAPTURE CARD SETTINGS")
             
-            # Device Index
+            capture_devices = self._scan_capture_card_devices()
+
+            # Device Selection
             device_frame = ctk.CTkFrame(self.capture_content_frame, fg_color="transparent")
             device_frame.pack(fill="x", pady=5)
-            ctk.CTkLabel(device_frame, text="Device Index", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-            self.capture_card_device_entry = ctk.CTkEntry(device_frame, fg_color=COLOR_SURFACE, border_width=0, text_color=COLOR_TEXT, width=150)
-            self.capture_card_device_entry.pack(side="right")
-            device_index = str(getattr(config, "capture_device_index", 0))
-            self.capture_card_device_entry.insert(0, device_index)
-            self.capture_card_device_entry.bind("<KeyRelease>", self._on_capture_card_device_changed)
-            self.capture_card_device_entry.bind("<FocusOut>", self._on_capture_card_device_changed)
+            ctk.CTkLabel(device_frame, text="Capture Device", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            device_actions = ctk.CTkFrame(device_frame, fg_color="transparent")
+            device_actions.pack(side="right")
+            device_values = [item["label"] for item in capture_devices] if capture_devices else ["No devices detected"]
+            self.capture_card_device_option = self._add_option_menu(
+                device_values,
+                self._on_capture_card_device_selected,
+                parent=device_actions,
+            )
+            self.capture_card_device_option.pack(side="left")
+            self._add_text_button(
+                device_actions,
+                "REFRESH",
+                self._refresh_capture_card_devices,
+            ).pack(side="left", padx=(8, 0))
+            selected_device_label = self._get_capture_card_selected_label(capture_devices)
+            self.capture_card_device_option.set(selected_device_label)
+
+            probe_frame = ctk.CTkFrame(self.capture_content_frame, fg_color="transparent")
+            probe_frame.pack(fill="x", pady=(0, 5))
+            self._add_text_button(
+                probe_frame,
+                "PROBE",
+                self._probe_capture_card_device,
+            ).pack(side="right")
+            self.capture_card_probe_info_label = ctk.CTkLabel(
+                probe_frame,
+                text="Probe selected device to list resolution / FPS / format.",
+                font=("Roboto", 9),
+                text_color=COLOR_TEXT_DIM,
+                anchor="w",
+                justify="left",
+            )
+            self.capture_card_probe_info_label.pack(side="left")
+
+            self.capture_card_probe_result_label = ctk.CTkLabel(
+                self.capture_content_frame,
+                text="Supported formats to probe: MJPG, NV12, YUY2, YUYV, BGR24",
+                font=("Roboto", 9),
+                text_color=COLOR_TEXT_DIM,
+                anchor="w",
+                justify="left",
+                wraplength=760,
+            )
+            self.capture_card_probe_result_label.pack(fill="x", pady=(0, 6))
+
+            self.capture_card_probe_list = ctk.CTkScrollableFrame(
+                self.capture_content_frame,
+                fg_color=COLOR_SURFACE,
+                corner_radius=8,
+                border_width=1,
+                border_color=COLOR_BORDER,
+                height=150,
+            )
+            self.capture_card_probe_list.pack(fill="x", pady=(0, 8))
+            self._render_capture_card_probe_rows([])
             
             # Resolution
             res_frame = ctk.CTkFrame(self.capture_content_frame, fg_color="transparent")
@@ -3042,16 +3094,22 @@ class ViewerApp(ctk.CTk):
             self.capture_card_height_entry.bind("<KeyRelease>", self._on_capture_card_resolution_changed)
             self.capture_card_height_entry.bind("<FocusOut>", self._on_capture_card_resolution_changed)
             
-            # FPS
-            fps_frame = ctk.CTkFrame(self.capture_content_frame, fg_color="transparent")
-            fps_frame.pack(fill="x", pady=5)
-            ctk.CTkLabel(fps_frame, text="FPS", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
-            self.capture_card_fps_entry = ctk.CTkEntry(fps_frame, fg_color=COLOR_SURFACE, border_width=0, text_color=COLOR_TEXT, width=150)
-            self.capture_card_fps_entry.pack(side="right")
-            fps = str(getattr(config, "capture_fps", 240))
-            self.capture_card_fps_entry.insert(0, fps)
-            self.capture_card_fps_entry.bind("<KeyRelease>", self._on_capture_card_fps_changed)
-            self.capture_card_fps_entry.bind("<FocusOut>", self._on_capture_card_fps_changed)
+            format_frame = ctk.CTkFrame(self.capture_content_frame, fg_color="transparent")
+            format_frame.pack(fill="x", pady=5)
+            ctk.CTkLabel(format_frame, text="Format", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            format_values = ["MJPG", "NV12", "YUY2", "YUYV", "BGR24"]
+            self.capture_card_format_option = self._add_option_menu(
+                format_values,
+                self._on_capture_card_format_selected,
+                parent=format_frame,
+            )
+            self.capture_card_format_option.pack(side="right")
+            current_format = str((getattr(config, "capture_fourcc_preference", ["MJPG"]) or ["MJPG"])[0]).upper()
+            if current_format == "BGR3":
+                current_format = "BGR24"
+            if current_format not in format_values:
+                current_format = "MJPG"
+            self.capture_card_format_option.set(current_format)
             
             self._add_spacer_in_frame(self.capture_content_frame)
             self._add_subtitle_in_frame(self.capture_content_frame, "CAPTURE REGION")
@@ -3347,6 +3405,133 @@ class ViewerApp(ctk.CTk):
                 config.capture_device_index = val
             except ValueError:
                 pass
+
+    def _scan_capture_card_devices(self):
+        """Scan capture devices for OpenCV DShow / 自動掃描 capture devices."""
+        devices = []
+        self._capture_card_display_to_index = {}
+        try:
+            from src.capture.CaptureCard import enumerate_capture_card_devices
+
+            devices = enumerate_capture_card_devices(max_index=10)
+        except Exception as e:
+            log_print(f"[UI] Capture card device scan failed: {e}")
+
+        for item in devices:
+            self._capture_card_display_to_index[str(item["label"])] = int(item["index"])
+        return devices
+
+    def _get_capture_card_selected_label(self, devices):
+        current_index = int(getattr(config, "capture_device_index", 0))
+        for item in devices:
+            if int(item["index"]) == current_index:
+                return str(item["label"])
+        if devices:
+            first = devices[0]
+            try:
+                config.capture_device_index = int(first["index"])
+            except Exception:
+                pass
+            return str(first["label"])
+        return "No devices detected"
+
+    def _on_capture_card_device_selected(self, selected_label):
+        try:
+            if str(selected_label) not in self._capture_card_display_to_index:
+                return
+            config.capture_device_index = int(self._capture_card_display_to_index[str(selected_label)])
+        except Exception:
+            pass
+
+    def _refresh_capture_card_devices(self):
+        devices = self._scan_capture_card_devices()
+        values = [item["label"] for item in devices] if devices else ["No devices detected"]
+        if hasattr(self, "capture_card_device_option") and self.capture_card_device_option.winfo_exists():
+            self.capture_card_device_option.configure(values=values)
+            self.capture_card_device_option.set(self._get_capture_card_selected_label(devices))
+        if hasattr(self, "capture_card_probe_result_label") and self.capture_card_probe_result_label.winfo_exists():
+            summary = f"Detected {len(devices)} capture device(s)." if devices else "No capture devices detected."
+            self.capture_card_probe_result_label.configure(text=summary)
+        self._set_status_indicator("Status: Capture devices refreshed", COLOR_TEXT_DIM)
+
+    def _render_capture_card_probe_rows(self, formats):
+        if not hasattr(self, "capture_card_probe_list") or not self.capture_card_probe_list.winfo_exists():
+            return
+
+        for widget in self.capture_card_probe_list.winfo_children():
+            widget.destroy()
+
+        header = ctk.CTkFrame(self.capture_card_probe_list, fg_color="transparent")
+        header.pack(fill="x", pady=(2, 4))
+        ctk.CTkLabel(header, text="Resolution", font=("Roboto", 10, "bold"), text_color=COLOR_TEXT, width=180, anchor="w").pack(side="left", padx=(6, 4))
+        ctk.CTkLabel(header, text="FPS", font=("Roboto", 10, "bold"), text_color=COLOR_TEXT, width=120, anchor="w").pack(side="left", padx=4)
+        ctk.CTkLabel(header, text="Format", font=("Roboto", 10, "bold"), text_color=COLOR_TEXT, width=120, anchor="w").pack(side="left", padx=4)
+
+        if not formats:
+            ctk.CTkLabel(
+                self.capture_card_probe_list,
+                text="No probed modes yet.",
+                font=("Roboto", 9),
+                text_color=COLOR_TEXT_DIM,
+                anchor="w",
+            ).pack(fill="x", padx=6, pady=(2, 6))
+            return
+
+        for item in formats:
+            row = ctk.CTkFrame(self.capture_card_probe_list, fg_color="transparent")
+            row.pack(fill="x", pady=1)
+            resolution = f'{item.get("width")}x{item.get("height")}'
+            fps_text = f'{item.get("fps")}'
+            fmt = str(item.get("format", "")).upper()
+            if fmt == "BGR3":
+                fmt = "BGR24"
+            ctk.CTkLabel(row, text=resolution, font=("Roboto", 9), text_color=COLOR_TEXT, width=180, anchor="w").pack(side="left", padx=(6, 4))
+            ctk.CTkLabel(row, text=fps_text, font=("Roboto", 9), text_color=COLOR_TEXT, width=120, anchor="w").pack(side="left", padx=4)
+            ctk.CTkLabel(row, text=fmt, font=("Roboto", 9), text_color=COLOR_TEXT, width=120, anchor="w").pack(side="left", padx=4)
+
+    def _probe_capture_card_device(self):
+        try:
+            from src.capture.CaptureCard import probe_capture_card_device
+
+            device_index = int(getattr(config, "capture_device_index", 0))
+            result = probe_capture_card_device(
+                device_index=device_index,
+                fourcc_values=["MJPG", "NV12", "YUY2", "YUYV", "BGR3"],
+            )
+            if hasattr(self, "capture_card_probe_info_label") and self.capture_card_probe_info_label.winfo_exists():
+                self.capture_card_probe_info_label.configure(text=str(result.get("message", "")))
+
+            formats = result.get("formats", []) if isinstance(result, dict) else []
+            if formats:
+                probe_text = f"Detected {len(formats)} mode(s)."
+                self._render_capture_card_probe_rows(formats)
+                self._set_status_indicator("Status: Capture card probe complete", COLOR_TEXT)
+            else:
+                probe_text = str(result.get("message", "No supported modes detected."))
+                self._render_capture_card_probe_rows([])
+                self._set_status_indicator("Status: Capture card probe found no modes", COLOR_WARNING)
+
+            if hasattr(self, "capture_card_probe_result_label") and self.capture_card_probe_result_label.winfo_exists():
+                self.capture_card_probe_result_label.configure(text=probe_text)
+        except Exception as e:
+            self._set_status_indicator(f"Status: Capture card probe failed: {e}", COLOR_DANGER)
+            self._render_capture_card_probe_rows([])
+            if hasattr(self, "capture_card_probe_result_label") and self.capture_card_probe_result_label.winfo_exists():
+                self.capture_card_probe_result_label.configure(text=f"Probe failed: {e}")
+
+    def _on_capture_card_format_selected(self, selected_format):
+        fmt = str(selected_format or "").strip().upper()
+        if not fmt:
+            return
+        if fmt == "BGR24":
+            fmt = "BGR3"
+        rest = []
+        for item in getattr(config, "capture_fourcc_preference", []):
+            item_name = str(item).upper()
+            if item_name == fmt:
+                continue
+            rest.append(item_name)
+        config.capture_fourcc_preference = [fmt] + rest
     
     def _on_capture_card_resolution_changed(self, event=None):
         """瀵︽檪淇濆瓨 CaptureCard Resolution"""
@@ -3359,15 +3544,6 @@ class ViewerApp(ctk.CTk):
                     config.capture_height = height
                 except ValueError:
                     pass
-    
-    def _on_capture_card_fps_changed(self, event=None):
-        """瀵︽檪淇濆瓨 CaptureCard FPS"""
-        if hasattr(self, 'capture_card_fps_entry') and self.capture_card_fps_entry.winfo_exists():
-            try:
-                val = float(self.capture_card_fps_entry.get())
-                config.capture_fps = val
-            except ValueError:
-                pass
     
     def _on_fps_limit_changed(self, event=None):
         """Handle FPS limit change"""
@@ -7282,12 +7458,8 @@ class ViewerApp(ctk.CTk):
         """閫ｆ帴 CaptureCard"""
         if self.capture.mode in ["CaptureCard", "CaptureCardGStreamer"]:
             # 纰轰繚閰嶇疆宸叉洿鏂?
-            if hasattr(self, 'capture_card_device_entry'):
-                try:
-                    device_index = int(self.capture_card_device_entry.get())
-                    config.capture_device_index = device_index
-                except ValueError:
-                    pass
+            if hasattr(self, 'capture_card_device_option') and self.capture_card_device_option.winfo_exists():
+                self._on_capture_card_device_selected(self.capture_card_device_option.get())
             
             if hasattr(self, 'capture_card_width_entry') and hasattr(self, 'capture_card_height_entry'):
                 try:
@@ -7297,13 +7469,6 @@ class ViewerApp(ctk.CTk):
                     config.capture_height = height
                     # 鏇存柊涓績榛為’绀猴紙鍥犵偤鍒嗚鲸鐜囨敼璁婂彲鑳藉奖闊夸腑蹇冮粸锛?
                     self._update_capture_card_center_display()
-                except ValueError:
-                    pass
-            
-            if hasattr(self, 'capture_card_fps_entry'):
-                try:
-                    fps = float(self.capture_card_fps_entry.get())
-                    config.capture_fps = fps
                 except ValueError:
                     pass
             
