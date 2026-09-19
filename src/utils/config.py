@@ -58,7 +58,7 @@ class Config:
         self.selected_2_tb = 2
         self.in_game_sens = 0.235
         self.mouse_dpi = 800
-        self.mouse_api = "Serial"  # Serial, Arduino, SendInput, Net, KmboxA, MakV2, MakcuController, MakxdMakAPI, DHZ
+        self.mouse_api = "Serial"  # Serial, Arduino, SendInput, Net, KmboxA, MakV2, MakcuController, MakxdMakAPI, MakAPI, DHZ, Ferrum, Medius
         self.keyboard_api_enabled = False
         self.keyboard_api = "Follow Mouse API"  # Follow Mouse API, SendInput, Serial, Net...
         self.auto_connect_mouse_api = False
@@ -81,6 +81,8 @@ class Config:
         self.makcu_controller_baud = 115200
         self.makxd_mak_port = ""
         self.makxd_mak_baud = 115200
+        self.mak_api_port = ""
+        self.mak_api_baud = 0
         self.dhz_ip = "192.168.2.188"
         self.dhz_port = "5000"
         self.dhz_random = 0
@@ -93,6 +95,7 @@ class Config:
         self.ferrum_dhz_ip = "192.168.8.88"
         self.ferrum_dhz_port = "5000"
         self.ferrum_dhz_random = 0
+        self.medius_port = ""
         self.keyboard_ferrum_device_path = ""
         self.keyboard_ferrum_connection_type = "auto"
         self.keyboard_ferrum_mode = "KmAPI"
@@ -499,6 +502,9 @@ class Config:
             "makcu_controller_baud": self.makcu_controller_baud,
             "makxd_mak_port": self.makxd_mak_port,
             "makxd_mak_baud": self.makxd_mak_baud,
+            "mak_api_port": self.mak_api_port,
+            "mak_api_baud": self.mak_api_baud,
+            "medius_port": self.medius_port,
             "dhz_ip": self.dhz_ip,
             "dhz_port": self.dhz_port,
             "dhz_random": self.dhz_random,
@@ -856,6 +862,12 @@ class Config:
             self.makxd_mak_baud = int(getattr(self, "makxd_mak_baud", 115200))
         except Exception:
             self.makxd_mak_baud = 115200
+        self.mak_api_port = str(getattr(self, "mak_api_port", "")).strip()
+        try:
+            self.mak_api_baud = int(getattr(self, "mak_api_baud", 0))
+        except Exception:
+            self.mak_api_baud = 0
+        self.medius_port = str(getattr(self, "medius_port", "")).strip()
         self.ferrum_device_path = str(getattr(self, "ferrum_device_path", "")).strip()
         self.ferrum_connection_type = str(getattr(self, "ferrum_connection_type", "auto")).strip() or "auto"
         self.ferrum_mode = str(getattr(self, "ferrum_mode", "KmAPI")).strip() or "KmAPI"

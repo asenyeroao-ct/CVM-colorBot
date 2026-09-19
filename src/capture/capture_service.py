@@ -3,6 +3,7 @@ import numpy as np
 from .ndi import NDIManager
 import cv2
 import time
+import threading
 
 # 灏庡叆 OBS_UDP 妯＄祫 (浣跨敤 OBS_UDP.py)
 try:
@@ -149,13 +150,14 @@ class CaptureService:
         self._ip = "127.0.0.1"
         self._port = 1234
         self._gstreamer_no_frame_last_log = 0.0
+        self._io_lock = threading.RLock()
+        self._mode_switch_job_id = 0
 
     def set_mode(self, mode):
-        """鍒囨彌鎹曠嵅妯″紡"""
+        """切換採集模式。採集卡釋放在背景執行，避免 UI 卡住。"""
         if mode not in ["NDI", "UDP", "Teleport", "CaptureCard", "CaptureCardGStreamer", "MSS"]:
             return
         
-        # 濡傛灉鍒囨彌妯″紡锛屽厛鏂烽枊鐣跺墠閫ｆ帴
         if self.mode != mode:
             self.disconnect()
             
@@ -431,6 +433,12 @@ class CaptureService:
                 from src.utils.config import config as global_config
                 config_to_use = config if config else global_config
 
+                if self.capture_card_camera:
+                    old = self.capture_card_camera
+                    self.capture_card_camera = None
+                    self._stop_capture_backend_async(old, "CaptureCard")
+                    time.sleep(0.15)
+
                 self.capture_card_camera = create_capture_card_camera(config_to_use)
                 log_print("[Capture] CaptureCard connection successful.")
                 return True, None
@@ -460,8 +468,20 @@ class CaptureService:
             log_print(f"[Capture] MSS connection exception: {e}")
             return False, str(e)
 
+    def _stop_capture_backend_async(self, camera, name):
+        if camera is None:
+            return
+
+        def _stop():
+            try:
+                camera.stop()
+            except Exception as e:
+                log_print(f"[Capture] {name} background stop failed: {e}")
+
+        threading.Thread(target=_stop, daemon=True, name=f"{name}Stop").start()
+
     def disconnect(self):
-        """鏂烽枊閫ｆ帴"""
+        """斷開連接。採集卡 / GStreamer 釋放放到背景，避免 DirectShow 卡住 UI。"""
         if self.mode == "NDI":
             pass 
         elif self.mode == "UDP":
@@ -471,13 +491,13 @@ class CaptureService:
             if self.teleport_manager:
                 self.teleport_manager.disconnect()
         elif self.mode == "CaptureCard":
-            if self.capture_card_camera:
-                self.capture_card_camera.stop()
-                self.capture_card_camera = None
+            camera = self.capture_card_camera
+            self.capture_card_camera = None
+            self._stop_capture_backend_async(camera, "CaptureCard")
         elif self.mode == "CaptureCardGStreamer":
-            if self.capture_card_gstreamer_camera:
-                self.capture_card_gstreamer_camera.stop()
-                self.capture_card_gstreamer_camera = None
+            camera = self.capture_card_gstreamer_camera
+            self.capture_card_gstreamer_camera = None
+            self._stop_capture_backend_async(camera, "CaptureCardGStreamer")
         elif self.mode == "MSS":
             if self.mss_capture:
                 self.mss_capture.disconnect()

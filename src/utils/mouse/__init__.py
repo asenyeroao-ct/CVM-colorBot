@@ -7,9 +7,11 @@ from . import (
     FerrumAPI,
     KmboxAAPI,
     MakxdMakAPI,
+    MakAPI,
     MakV2,
     MakV2Binary,
     MakcuControllerAPI,
+    MediusAPI,
     NetAPI,
     SendInputAPI,
     SerialAPI,
@@ -36,6 +38,8 @@ def _normalize_api_name(mode: str) -> str:
         return "MakV2Binary"
     if mode_norm in ("makxdmakapi", "makxd_makapi", "makxd-makapi", "makxd makapi", "makxd_mak", "makxd-mak"):
         return "MakxdMakAPI"
+    if mode_norm in ("makapi", "mak_api", "mak-api", "mak api"):
+        return "MakAPI"
     if mode_norm in ("makv2", "mak_v2", "mak-v2"):
         return "MakV2"
     if mode_norm in ("makcucontroller", "makcu_controller", "makcu-controller", "makcu controller"):
@@ -46,6 +50,8 @@ def _normalize_api_name(mode: str) -> str:
         return "SendInput"
     if mode_norm == "ferrum":
         return "Ferrum"
+    if mode_norm in ("medius", "k4tech", "k4"):
+        return "Medius"
     return "Serial"
 
 
@@ -109,12 +115,22 @@ _BACKEND_CAPABILITIES = {
         "keyboard_state": False,
         "trigger_strafe_ui": False,
     },
+    "MakAPI": {
+        "keyboard_output": True,
+        "keyboard_state": True,
+        "trigger_strafe_ui": True,
+    },
     "DHZ": {
         "keyboard_output": True,
         "keyboard_state": True,
         "trigger_strafe_ui": True,
     },
     "Ferrum": {
+        "keyboard_output": True,
+        "keyboard_state": True,
+        "trigger_strafe_ui": True,
+    },
+    "Medius": {
         "keyboard_output": True,
         "keyboard_state": True,
         "trigger_strafe_ui": True,
@@ -372,6 +388,21 @@ def _get_makxd_mak_settings(port=None, baud=None):
     return selected_port, selected_baud
 
 
+def _get_mak_api_settings(port=None, baud=None):
+    cfg_port, cfg_baud = "", 0
+    try:
+        from src.utils.config import config
+
+        cfg_port = str(getattr(config, "mak_api_port", cfg_port))
+        cfg_baud = int(getattr(config, "mak_api_baud", cfg_baud))
+    except Exception:
+        pass
+
+    selected_port = str(port if port is not None else cfg_port).strip()
+    selected_baud = int(baud if baud is not None else cfg_baud)
+    return selected_port, selected_baud
+
+
 def _get_arduino_settings(port=None, baud=None):
     cfg_port, cfg_baud = "", 115200
     try:
@@ -385,6 +416,18 @@ def _get_arduino_settings(port=None, baud=None):
     selected_port = str(port if port is not None else cfg_port).strip()
     selected_baud = int(baud if baud is not None else cfg_baud)
     return selected_port, selected_baud
+
+
+def _get_medius_settings(port=None):
+    cfg_port = ""
+    try:
+        from src.utils.config import config
+
+        cfg_port = str(getattr(config, "medius_port", cfg_port))
+    except Exception:
+        pass
+    selected_port = str(port if port is not None else cfg_port).strip()
+    return selected_port
 
 
 def _get_ferrum_settings(device_path=None, connection_type=None):
@@ -412,6 +455,8 @@ def _disconnect_all_backends():
     KmboxAAPI.disconnect()
     DHZAPI.disconnect()
     FerrumAPI.disconnect()
+    MediusAPI.disconnect()
+    MakAPI.disconnect()
     MakV2.disconnect()
     MakcuControllerAPI.disconnect()
     MakV2Binary.disconnect()
@@ -513,6 +558,13 @@ def connect_to_makxd_mak(port=None, baud=None) -> bool:
     return ok
 
 
+def connect_to_mak_api(port=None, baud=None) -> bool:
+    port, baud = _get_mak_api_settings(port=port, baud=baud)
+    ok = MakAPI.connect(port=port if port else None, baud=baud if baud else None)
+    _sync_public_state()
+    return ok
+
+
 def connect_to_dhz(ip=None, port=None, random_shift=None) -> bool:
     ip, port, random_shift = _get_dhz_settings(ip=ip, port=port, random_shift=random_shift)
     ok = DHZAPI.connect(ip=ip, port=port, random_shift=random_shift)
@@ -529,6 +581,13 @@ def connect_to_arduino(port=None, baud=None) -> bool:
 
 def connect_to_sendinput() -> bool:
     ok = SendInputAPI.connect()
+    _sync_public_state()
+    return ok
+
+
+def connect_to_medius(port=None) -> bool:
+    selected_port = _get_medius_settings(port=port)
+    ok = MediusAPI.connect(port=selected_port if selected_port else None)
     _sync_public_state()
     return ok
 
@@ -648,6 +707,8 @@ def connect_to_makcu():
         return connect_to_makv2binary()
     if mode == "MakxdMakAPI":
         return connect_to_makxd_mak()
+    if mode == "MakAPI":
+        return connect_to_mak_api()
     if mode == "MakV2":
         return connect_to_makv2()
     if mode == "MakcuController":
@@ -658,6 +719,8 @@ def connect_to_makcu():
         return connect_to_sendinput()
     if mode == "Ferrum":
         return connect_to_ferrum()
+    if mode == "Medius":
+        return connect_to_medius()
     return connect_to_serial()
 
 
@@ -682,11 +745,14 @@ def switch_backend(
     makv2binary_baud=None,
     makxd_mak_port=None,
     makxd_mak_baud=None,
+    mak_api_port=None,
+    mak_api_baud=None,
     dhz_ip=None,
     dhz_port=None,
     dhz_random=None,
     ferrum_device_path=None,
     ferrum_connection_type="auto",
+    medius_port=None,
 ):
     target_mode = _normalize_api_name(mode)
     if uuid is None and mac is not None:
@@ -750,6 +816,10 @@ def switch_backend(
             config.makxd_mak_port = str(makxd_mak_port)
         if makxd_mak_baud is not None:
             config.makxd_mak_baud = int(makxd_mak_baud)
+        if mak_api_port is not None:
+            config.mak_api_port = str(mak_api_port)
+        if mak_api_baud is not None:
+            config.mak_api_baud = int(mak_api_baud)
         if dhz_ip is not None:
             config.dhz_ip = str(dhz_ip)
         if dhz_port is not None:
@@ -760,6 +830,8 @@ def switch_backend(
             config.ferrum_device_path = str(ferrum_device_path)
         if ferrum_connection_type is not None:
             config.ferrum_connection_type = str(ferrum_connection_type)
+        if medius_port is not None:
+            config.medius_port = str(medius_port)
     except Exception:
         pass
 
@@ -786,6 +858,10 @@ def switch_backend(
         ok = connect_to_makxd_mak(port=makxd_mak_port, baud=makxd_mak_baud)
         return ok, (None if ok else (state.last_connect_error or "MakxdMakAPI backend connect failed"))
 
+    if target_mode == "MakAPI":
+        ok = connect_to_mak_api(port=mak_api_port, baud=mak_api_baud)
+        return ok, (None if ok else (state.last_connect_error or "MAK API backend connect failed"))
+
     if target_mode == "MakV2":
         ok = connect_to_makv2(port=makv2_port, baud=makv2_baud)
         return ok, (None if ok else (state.last_connect_error or "MakV2 backend connect failed"))
@@ -809,6 +885,10 @@ def switch_backend(
     if target_mode == "Ferrum":
         ok = connect_to_ferrum(device_path=ferrum_device_path, connection_type=ferrum_connection_type)
         return ok, (None if ok else (state.last_connect_error or "Ferrum backend connect failed"))
+
+    if target_mode == "Medius":
+        ok = connect_to_medius(port=medius_port)
+        return ok, (None if ok else (state.last_connect_error or "Medius backend connect failed"))
 
     ok = connect_to_serial(mode=serial_port_mode, port=serial_port)
     return ok, (None if ok else (state.last_connect_error or "Serial backend connect failed"))
@@ -843,6 +923,10 @@ def is_button_pressed(idx: int) -> bool:
         return SendInputAPI.is_button_pressed(idx)
     if state.active_backend == "Ferrum":
         return FerrumAPI.is_button_pressed(idx)
+    if state.active_backend == "Medius":
+        return MediusAPI.is_button_pressed(idx)
+    if state.active_backend == "MakAPI":
+        return MakAPI.is_button_pressed(idx)
     return SerialAPI.is_button_pressed(idx)
 
 
@@ -876,6 +960,10 @@ def is_key_pressed(key) -> bool:
         return ArduinoAPI.is_key_pressed(key)
     if keyboard_backend == "Ferrum":
         return FerrumAPI.is_key_pressed(key)
+    if keyboard_backend == "Medius":
+        return MediusAPI.is_key_pressed(key)
+    if keyboard_backend == "MakAPI":
+        return MakAPI.is_key_pressed(key)
     return SerialAPI.is_key_pressed(key)
 
 
@@ -911,6 +999,10 @@ def key_down(key):
         ArduinoAPI.key_down(key)
     elif keyboard_backend == "Ferrum":
         FerrumAPI.key_down(key)
+    elif keyboard_backend == "Medius":
+        MediusAPI.key_down(key)
+    elif keyboard_backend == "MakAPI":
+        MakAPI.key_down(key)
     else:
         SerialAPI.key_down(key)
 
@@ -947,6 +1039,10 @@ def key_up(key):
         ArduinoAPI.key_up(key)
     elif keyboard_backend == "Ferrum":
         FerrumAPI.key_up(key)
+    elif keyboard_backend == "Medius":
+        MediusAPI.key_up(key)
+    elif keyboard_backend == "MakAPI":
+        MakAPI.key_up(key)
     else:
         SerialAPI.key_up(key)
 
@@ -983,6 +1079,10 @@ def key_press(key):
         ArduinoAPI.key_press(key)
     elif keyboard_backend == "Ferrum":
         FerrumAPI.key_press(key)
+    elif keyboard_backend == "Medius":
+        MediusAPI.key_press(key)
+    elif keyboard_backend == "MakAPI":
+        MakAPI.key_press(key)
     else:
         SerialAPI.key_press(key)
 
@@ -998,6 +1098,8 @@ def mask_key(key):
         DHZAPI.mask_key(key)
     elif state.active_backend == "Ferrum":
         FerrumAPI.mask_key(key)
+    elif state.active_backend == "MakAPI":
+        MakAPI.mask_key(key)
 
 
 def unmask_key(key):
@@ -1011,6 +1113,8 @@ def unmask_key(key):
         DHZAPI.unmask_key(key)
     elif state.active_backend == "Ferrum":
         FerrumAPI.unmask_key(key)
+    elif state.active_backend == "MakAPI":
+        MakAPI.unmask_key(key)
 
 
 def unmask_all_keys():
@@ -1024,6 +1128,8 @@ def unmask_all_keys():
         DHZAPI.unmask_all_keys()
     elif state.active_backend == "Ferrum":
         FerrumAPI.unmask_all_keys()
+    elif state.active_backend == "MakAPI":
+        MakAPI.unmask_all_keys()
 
 
 def switch_to_4m():
@@ -1053,6 +1159,10 @@ def test_move():
         SendInputAPI.move(100, 100)
     elif state.active_backend == "Ferrum":
         FerrumAPI.test_move()
+    elif state.active_backend == "Medius":
+        MediusAPI.test_move()
+    elif state.active_backend == "MakAPI":
+        MakAPI.test_move()
     else:
         SerialAPI.test_move()
 
@@ -1066,6 +1176,10 @@ def lock_button_idx(idx: int):
         MakxdMakAPI.lock_button_idx(idx)
     elif state.active_backend == "MakV2":
         MakV2.lock_button_idx(idx)
+    elif state.active_backend == "Medius":
+        MediusAPI.lock_button_idx(idx)
+    elif state.active_backend == "MakAPI":
+        MakAPI.lock_button_idx(idx)
     elif state.active_backend == "Serial":
         SerialAPI.lock_button_idx(idx)
 
@@ -1079,6 +1193,10 @@ def unlock_button_idx(idx: int):
         MakxdMakAPI.unlock_button_idx(idx)
     elif state.active_backend == "MakV2":
         MakV2.unlock_button_idx(idx)
+    elif state.active_backend == "Medius":
+        MediusAPI.unlock_button_idx(idx)
+    elif state.active_backend == "MakAPI":
+        MakAPI.unlock_button_idx(idx)
     elif state.active_backend == "Serial":
         SerialAPI.unlock_button_idx(idx)
 
@@ -1090,6 +1208,10 @@ def unlock_all_locks():
         MakxdMakAPI.unlock_all_locks()
     elif state.active_backend == "MakV2":
         MakV2.unlock_all_locks()
+    elif state.active_backend == "Medius":
+        MediusAPI.unlock_all_locks()
+    elif state.active_backend == "MakAPI":
+        MakAPI.unlock_all_locks()
     elif state.active_backend == "Serial":
         SerialAPI.unlock_all_locks()
 
@@ -1101,6 +1223,10 @@ def lock_movement_x(lock: bool = True, skip_lock: bool = False):
         MakxdMakAPI.lock_movement_x(lock=lock, skip_lock=skip_lock)
     elif state.active_backend == "MakV2":
         MakV2.lock_movement_x(lock=lock, skip_lock=skip_lock)
+    elif state.active_backend == "Medius":
+        MediusAPI.lock_movement_x(lock=lock, skip_lock=skip_lock)
+    elif state.active_backend == "MakAPI":
+        MakAPI.lock_movement_x(lock=lock, skip_lock=skip_lock)
     elif state.active_backend == "Serial":
         SerialAPI.lock_movement_x(lock=lock, skip_lock=skip_lock)
 
@@ -1112,6 +1238,10 @@ def lock_movement_y(lock: bool = True, skip_lock: bool = False):
         MakxdMakAPI.lock_movement_y(lock=lock, skip_lock=skip_lock)
     elif state.active_backend == "MakV2":
         MakV2.lock_movement_y(lock=lock, skip_lock=skip_lock)
+    elif state.active_backend == "Medius":
+        MediusAPI.lock_movement_y(lock=lock, skip_lock=skip_lock)
+    elif state.active_backend == "MakAPI":
+        MakAPI.lock_movement_y(lock=lock, skip_lock=skip_lock)
     elif state.active_backend == "Serial":
         SerialAPI.lock_movement_y(lock=lock, skip_lock=skip_lock)
 
@@ -1123,6 +1253,10 @@ def update_movement_lock(lock_x: bool, lock_y: bool, is_main: bool = True):
         MakxdMakAPI.update_movement_lock(lock_x=lock_x, lock_y=lock_y, is_main=is_main)
     elif state.active_backend == "MakV2":
         MakV2.update_movement_lock(lock_x=lock_x, lock_y=lock_y, is_main=is_main)
+    elif state.active_backend == "Medius":
+        MediusAPI.update_movement_lock(lock_x=lock_x, lock_y=lock_y, is_main=is_main)
+    elif state.active_backend == "MakAPI":
+        MakAPI.update_movement_lock(lock_x=lock_x, lock_y=lock_y, is_main=is_main)
     elif state.active_backend == "Serial":
         SerialAPI.update_movement_lock(lock_x=lock_x, lock_y=lock_y, is_main=is_main)
 
@@ -1134,6 +1268,10 @@ def tick_movement_lock_manager():
         MakxdMakAPI.tick_movement_lock_manager()
     elif state.active_backend == "MakV2":
         MakV2.tick_movement_lock_manager()
+    elif state.active_backend == "Medius":
+        MediusAPI.tick_movement_lock_manager()
+    elif state.active_backend == "MakAPI":
+        MakAPI.tick_movement_lock_manager()
     elif state.active_backend == "Serial":
         SerialAPI.tick_movement_lock_manager()
 
@@ -1145,6 +1283,10 @@ def mask_manager_tick(selected_idx: int, aimbot_running: bool):
         MakxdMakAPI.mask_manager_tick(selected_idx=selected_idx, aimbot_running=aimbot_running)
     elif state.active_backend == "MakV2":
         MakV2.mask_manager_tick(selected_idx=selected_idx, aimbot_running=aimbot_running)
+    elif state.active_backend == "Medius":
+        MediusAPI.mask_manager_tick(selected_idx=selected_idx, aimbot_running=aimbot_running)
+    elif state.active_backend == "MakAPI":
+        MakAPI.mask_manager_tick(selected_idx=selected_idx, aimbot_running=aimbot_running)
     elif state.active_backend == "Serial":
         SerialAPI.mask_manager_tick(selected_idx=selected_idx, aimbot_running=aimbot_running)
 
@@ -1210,6 +1352,10 @@ class Mouse:
             SendInputAPI.move(x, y)
         elif state.active_backend == "Ferrum":
             FerrumAPI.move(x, y)
+        elif state.active_backend == "Medius":
+            MediusAPI.move(x, y)
+        elif state.active_backend == "MakAPI":
+            MakAPI.move(x, y)
         else:
             SerialAPI.move(x, y)
 
@@ -1236,6 +1382,10 @@ class Mouse:
             SendInputAPI.move_bezier(x, y, segments, ctrl_x, ctrl_y)
         elif state.active_backend == "Ferrum":
             FerrumAPI.move_bezier(x, y, segments, ctrl_x, ctrl_y)
+        elif state.active_backend == "Medius":
+            MediusAPI.move_bezier(x, y, segments, ctrl_x, ctrl_y)
+        elif state.active_backend == "MakAPI":
+            MakAPI.move_bezier(x, y, segments, ctrl_x, ctrl_y)
         else:
             SerialAPI.move_bezier(x, y, segments, ctrl_x, ctrl_y)
 
@@ -1272,6 +1422,12 @@ class Mouse:
         elif state.active_backend == "Ferrum":
             FerrumAPI.left(1)
             FerrumAPI.left(0)
+        elif state.active_backend == "Medius":
+            MediusAPI.left(1)
+            MediusAPI.left(0)
+        elif state.active_backend == "MakAPI":
+            MakAPI.left(1)
+            MakAPI.left(0)
         else:
             SerialAPI.left(1)
             SerialAPI.left(0)
@@ -1300,6 +1456,10 @@ class Mouse:
             SendInputAPI.left(1)
         elif state.active_backend == "Ferrum":
             FerrumAPI.left(1)
+        elif state.active_backend == "Medius":
+            MediusAPI.left(1)
+        elif state.active_backend == "MakAPI":
+            MakAPI.left(1)
         else:
             SerialAPI.left(1)
         log_press("Mouse.press()")
@@ -1327,6 +1487,10 @@ class Mouse:
             SendInputAPI.left(0)
         elif state.active_backend == "Ferrum":
             FerrumAPI.left(0)
+        elif state.active_backend == "Medius":
+            MediusAPI.left(0)
+        elif state.active_backend == "MakAPI":
+            MakAPI.left(0)
         else:
             SerialAPI.left(0)
         log_release("Mouse.release()")
@@ -1369,7 +1533,7 @@ class Mouse:
                 state.movement_lock_state["lock_y"] = False
                 state.movement_lock_state["main_aimbot_locked"] = False
                 state.movement_lock_state["sec_aimbot_locked"] = False
-            if state.is_connected and state.active_backend in ("Serial", "MakV2", "MakV2Binary", "MakxdMakAPI"):
+            if state.is_connected and state.active_backend in ("Serial", "MakV2", "MakV2Binary", "MakxdMakAPI", "Medius", "MakAPI"):
                 lock_movement_x(False)
                 lock_movement_y(False)
         except Exception:

@@ -23,6 +23,7 @@ from src.utils.debug_logger import get_recent_logs, clear_logs, get_log_count, l
 from src.utils.mouse.keycodes import to_vk_code
 from src.utils.updater import get_update_checker
 from src.ui_hsv_preview import HsvPreviewWindow
+from src.ui_capture_panel import CapturePanelWindow
 
 # --- Theme constants (霓虹暗色主題 + Neon dark inspired by reference) ---
 THEME_PRESETS = {
@@ -323,6 +324,8 @@ class ViewerApp(ctk.CTk):
         self.saved_makcu_controller_baud = str(getattr(config, "makcu_controller_baud", 115200))
         self.saved_makxd_mak_port = str(getattr(config, "makxd_mak_port", ""))
         self.saved_makxd_mak_baud = str(getattr(config, "makxd_mak_baud", 115200))
+        self.saved_mak_api_port = str(getattr(config, "mak_api_port", ""))
+        self.saved_mak_api_baud = str(getattr(config, "mak_api_baud", 0))
         self.saved_dhz_ip = getattr(config, "dhz_ip", "192.168.2.188")
         self.saved_dhz_port = str(getattr(config, "dhz_port", "5000"))
         self.saved_dhz_random = str(getattr(config, "dhz_random", 0))
@@ -335,6 +338,7 @@ class ViewerApp(ctk.CTk):
         self.saved_ferrum_dhz_ip = str(getattr(config, "ferrum_dhz_ip", "192.168.8.88"))
         self.saved_ferrum_dhz_port = str(getattr(config, "ferrum_dhz_port", "5000"))
         self.saved_ferrum_dhz_random = str(getattr(config, "ferrum_dhz_random", 0))
+        self.saved_medius_port = str(getattr(config, "medius_port", ""))
         self.saved_keyboard_ferrum_device_path = str(getattr(config, "keyboard_ferrum_device_path", ""))
         self.saved_keyboard_ferrum_connection_type = str(
             getattr(config, "keyboard_ferrum_connection_type", "auto")
@@ -352,6 +356,9 @@ class ViewerApp(ctk.CTk):
         self._mouse_api_connect_timeout_ms = 12000
         self._keyboard_api_connecting = False
         self._serial_baud_switching = False
+        self._capture_panel_window = None
+        self._capture_switching = False
+        self._capture_connect_job_id = 0
         
         # --- Build layout ---
         self._build_layout()
@@ -861,6 +868,8 @@ class ViewerApp(ctk.CTk):
             current_mouse_api = "MakV2Binary"
         elif current_mouse_api_norm in ("makxdmakapi", "makxd_makapi", "makxd-makapi", "makxd makapi", "makxd_mak", "makxd-mak"):
             current_mouse_api = "MakxdMakAPI"
+        elif current_mouse_api_norm in ("makapi", "mak_api", "mak-api", "mak api"):
+            current_mouse_api = "MAK API"
         elif current_mouse_api_norm in ("makv2", "mak_v2", "mak-v2"):
             current_mouse_api = "MakV2"
         elif current_mouse_api_norm in ("makcucontroller", "makcu_controller", "makcu-controller", "makcu controller"):
@@ -871,6 +880,8 @@ class ViewerApp(ctk.CTk):
             current_mouse_api = "SendInput"
         elif current_mouse_api_norm == "ferrum":
             current_mouse_api = "Ferrum"
+        elif current_mouse_api_norm in ("medius", "k4tech", "k4"):
+            current_mouse_api = "Medius"
         else:
             current_mouse_api = "Serial (Makcu)"
         self.saved_mouse_api = current_mouse_api
@@ -884,9 +895,11 @@ class ViewerApp(ctk.CTk):
             "MakV2",
             "MakcuController",
             "MakxdMakAPI",
+            "MAK API",
             "MakV2Binary",
             "DHZ",
             "Ferrum",
+            "Medius",
         ]
         current_keyboard_api = str(getattr(config, "keyboard_api", "Follow Mouse API")).strip()
         normalized_keyboard_api = self._normalize_keyboard_api_name(current_keyboard_api)
@@ -928,6 +941,8 @@ class ViewerApp(ctk.CTk):
         )
         self.saved_makxd_mak_port = str(getattr(config, "makxd_mak_port", self.saved_makxd_mak_port))
         self.saved_makxd_mak_baud = str(getattr(config, "makxd_mak_baud", self.saved_makxd_mak_baud))
+        self.saved_mak_api_port = str(getattr(config, "mak_api_port", self.saved_mak_api_port))
+        self.saved_mak_api_baud = str(getattr(config, "mak_api_baud", self.saved_mak_api_baud))
         self.saved_dhz_ip = getattr(config, "dhz_ip", self.saved_dhz_ip)
         self.saved_dhz_port = str(getattr(config, "dhz_port", self.saved_dhz_port))
         self.saved_dhz_random = str(getattr(config, "dhz_random", self.saved_dhz_random))
@@ -940,6 +955,7 @@ class ViewerApp(ctk.CTk):
         self.saved_ferrum_dhz_ip = str(getattr(config, "ferrum_dhz_ip", self.saved_ferrum_dhz_ip))
         self.saved_ferrum_dhz_port = str(getattr(config, "ferrum_dhz_port", self.saved_ferrum_dhz_port))
         self.saved_ferrum_dhz_random = str(getattr(config, "ferrum_dhz_random", self.saved_ferrum_dhz_random))
+        self.saved_medius_port = str(getattr(config, "medius_port", self.saved_medius_port))
         self.saved_keyboard_ferrum_device_path = str(
             getattr(config, "keyboard_ferrum_device_path", self.saved_keyboard_ferrum_device_path)
         )
@@ -987,7 +1003,7 @@ class ViewerApp(ctk.CTk):
         self.mouse_api_option = self._add_hardware_option_row_in_frame(
             self.mouse_hardware_frame,
             "Input API",
-            ["Serial (Makcu)", "Arduino", "SendInput", "Net", "KmboxA", "MakV2", "MakcuController", "MakxdMakAPI", "MakV2Binary", "DHZ", "Ferrum"],
+            ["Serial (Makcu)", "Arduino", "SendInput", "Net", "KmboxA", "MakV2", "MakcuController", "MakxdMakAPI", "MAK API", "MakV2Binary", "DHZ", "Ferrum", "Medius"],
             self._on_mouse_api_changed,
         )
         self.mouse_api_option.set(current_mouse_api)
@@ -1051,36 +1067,9 @@ class ViewerApp(ctk.CTk):
         self._update_mouse_api_ui()
         self._update_keyboard_api_ui()
         
-        # 鈹€鈹€ CAPTURE CONTROLS (collapsible) 鈹€鈹€
-        sec_capture = self._create_collapsible_section(self.content_frame, "Capture Controls", initially_open=True)
-        
-        # Capture Method Selection
-        self.capture_method_var.set(self.capture.mode)
-        # 鍓靛缓 option menu
-        self.capture_method_option = self._add_option_row_in_frame(
-            sec_capture,
-            "Method",
-            ["NDI", "UDP", "Teleport", "Capture Card (OpenCV)", "Capture Card (GStreamer)", "MSS"],
-            self._on_capture_method_changed,
-        )
-        # 椤紡瑷疆鐣跺墠鍊?
-        # Map internal mode to UI display name
-        display_mode = self.capture.mode
-        if display_mode == "CaptureCard":
-            display_mode = "Capture Card (OpenCV)"
-        elif display_mode == "CaptureCardGStreamer":
-            display_mode = "Capture Card (GStreamer)"
-        self.capture_method_option.set(display_mode)
-        
-        self._add_spacer_in_frame(sec_capture)
-        
-        # Dynamic Capture Content Frame
-        self.capture_content_frame = ctk.CTkFrame(sec_capture, fg_color="transparent")
-        self.capture_content_frame.pack(fill="x", pady=5)
-        
-        self._update_capture_ui()
+        self._add_capture_entry_card()
 
-        # 鈹€鈹€ SETTINGS (collapsible) 鈹€鈹€
+        # -- SETTINGS (collapsible) --
         sec_settings = self._create_collapsible_section(self.content_frame, "Settings", initially_open=True)
         
         # In-Game Sensitivity (闋愯ō 0.235, 绡勫湇 0.1-20)
@@ -1316,6 +1305,8 @@ class ViewerApp(ctk.CTk):
             mode = "DHZ"
         elif mode_norm in ("makxdmakapi", "makxd_makapi", "makxd-makapi", "makxd makapi", "makxd_mak", "makxd-mak"):
             mode = "MakxdMakAPI"
+        elif mode_norm in ("makapi", "mak_api", "mak-api", "mak api"):
+            mode = "MakAPI"
         elif mode_norm in ("makv2", "mak_v2", "mak-v2"):
             mode = "MakV2"
         elif mode_norm in ("makcucontroller", "makcu_controller", "makcu-controller", "makcu controller"):
@@ -1326,6 +1317,8 @@ class ViewerApp(ctk.CTk):
             mode = "SendInput"
         elif mode_norm == "ferrum":
             mode = "Ferrum"
+        elif mode_norm in ("medius", "k4tech", "k4"):
+            mode = "Medius"
         elif mode_norm in ("serial (makcu)", "serial", "makcu"):
             mode = "Serial"
         else:
@@ -1696,6 +1689,81 @@ class ViewerApp(ctk.CTk):
             self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
             return
 
+        if mode == "Medius":
+            tip = ctk.CTkLabel(
+                self.mouse_content_frame,
+                text="Medius box (pip install medius) — control-port injection to the clone/game PC",
+                font=("Roboto", 10),
+                text_color=COLOR_TEXT_DIM,
+            )
+            tip.pack(anchor="w", pady=(0, 8))
+
+            port_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
+            port_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(port_frame, text="COM Port (optional)", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.medius_port_entry = self._create_hardware_entry(port_frame)
+            self.medius_port_entry.pack(side="right")
+            self.medius_port_entry.insert(0, self.saved_medius_port)
+            self.medius_port_entry.bind("<KeyRelease>", self._on_medius_port_changed)
+            self.medius_port_entry.bind("<FocusOut>", self._on_medius_port_changed)
+
+            notice = ctk.CTkLabel(
+                self.mouse_content_frame,
+                text="Leave port empty to auto-find the first Medius box. Windows example: COM3",
+                font=("Roboto", 9),
+                text_color=COLOR_TEXT_DIM,
+            )
+            notice.pack(anchor="w", pady=(0, 8))
+
+            btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
+            btn_frame.pack(fill="x", pady=8)
+            self._add_hardware_action_button(btn_frame, "CONNECT MEDIUS", lambda: self._connect_mouse_api("Medius")).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "REFRESH PORTS", self._refresh_medius_ports).pack(side="left")
+            return
+
+        if mode == "MakAPI":
+            tip = ctk.CTkLabel(
+                self.mouse_content_frame,
+                text="MAK API (official DE AD binary frames over serial, not km.* ASCII)",
+                font=("Roboto", 10),
+                text_color=COLOR_TEXT_DIM,
+            )
+            tip.pack(anchor="w", pady=(0, 8))
+
+            port_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
+            port_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(port_frame, text="COM Port (optional)", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.mak_api_port_entry = self._create_hardware_entry(port_frame)
+            self.mak_api_port_entry.pack(side="right")
+            self.mak_api_port_entry.insert(0, self.saved_mak_api_port)
+            self.mak_api_port_entry.bind("<KeyRelease>", self._on_mak_api_port_changed)
+            self.mak_api_port_entry.bind("<FocusOut>", self._on_mak_api_port_changed)
+
+            baud_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
+            baud_frame.pack(fill="x", pady=3)
+            ctk.CTkLabel(baud_frame, text="Baud (0 = auto)", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+            self.mak_api_baud_entry = self._create_hardware_entry(baud_frame)
+            self.mak_api_baud_entry.pack(side="right")
+            self.mak_api_baud_entry.insert(0, self.saved_mak_api_baud)
+            self.mak_api_baud_entry.bind("<KeyRelease>", self._on_mak_api_baud_changed)
+            self.mak_api_baud_entry.bind("<FocusOut>", self._on_mak_api_baud_changed)
+
+            notice = ctk.CTkLabel(
+                self.mouse_content_frame,
+                text="Leave port empty to auto-find CH343/CH340 (VID 1A86). Baud 0 tries 115200, 1M, then 4M.",
+                font=("Roboto", 9),
+                text_color=COLOR_TEXT_DIM,
+            )
+            notice.pack(anchor="w", pady=(0, 8))
+
+            btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
+            btn_frame.pack(fill="x", pady=8)
+            self._add_hardware_action_button(btn_frame, "CONNECT MAK API", lambda: self._connect_mouse_api("MakAPI")).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "REFRESH PORTS", self._refresh_mak_api_ports).pack(side="left")
+            return
+
         if mode == "KmboxA":
             dll_name = "kmA.pyd"
             try:
@@ -1787,6 +1855,8 @@ class ViewerApp(ctk.CTk):
             self.saved_mouse_api = "DHZ"
         elif mode_norm in ("makxdmakapi", "makxd_makapi", "makxd-makapi", "makxd makapi", "makxd_mak", "makxd-mak"):
             self.saved_mouse_api = "MakxdMakAPI"
+        elif mode_norm in ("makapi", "mak_api", "mak-api", "mak api"):
+            self.saved_mouse_api = "MakAPI"
         elif mode_norm in ("makv2binary", "makv2_binary", "makv2-binary", "binary"):
             self.saved_mouse_api = "MakV2Binary"
         elif mode_norm in ("makv2", "mak_v2", "mak-v2"):
@@ -1799,6 +1869,8 @@ class ViewerApp(ctk.CTk):
             self.saved_mouse_api = "SendInput"
         elif mode_norm == "ferrum":
             self.saved_mouse_api = "Ferrum"
+        elif mode_norm in ("medius", "k4tech", "k4"):
+            self.saved_mouse_api = "Medius"
         else:
             self.saved_mouse_api = "Serial"
         config.mouse_api = self.saved_mouse_api
@@ -2290,6 +2362,69 @@ class ViewerApp(ctk.CTk):
             self.saved_ferrum_device_path = val
             config.ferrum_device_path = val
 
+    def _on_medius_port_changed(self, event=None):
+        if hasattr(self, "medius_port_entry") and self.medius_port_entry.winfo_exists():
+            val = self.medius_port_entry.get().strip()
+            self.saved_medius_port = val
+            config.medius_port = val
+
+    def _refresh_medius_ports(self):
+        try:
+            from src.utils.mouse.MediusAPI import list_ports
+
+            ports = list_ports()
+        except Exception as e:
+            self._set_status_indicator(f"Status: Medius ports failed: {e}", COLOR_DANGER)
+            return
+        if not ports:
+            self._set_status_indicator("Status: No Medius ports found", COLOR_WARNING)
+            return
+        first = ports[0]
+        path = str(first.get("path", "")).strip()
+        if path:
+            self.saved_medius_port = path
+            config.medius_port = path
+            if hasattr(self, "medius_port_entry") and self.medius_port_entry.winfo_exists():
+                self.medius_port_entry.delete(0, "end")
+                self.medius_port_entry.insert(0, path)
+        names = ", ".join(str(item.get("path") or "?") for item in ports)
+        self._set_status_indicator(f"Status: Medius ports: {names}", COLOR_TEXT)
+
+    def _on_mak_api_port_changed(self, event=None):
+        if hasattr(self, "mak_api_port_entry") and self.mak_api_port_entry.winfo_exists():
+            val = self.mak_api_port_entry.get().strip()
+            self.saved_mak_api_port = val
+            config.mak_api_port = val
+
+    def _on_mak_api_baud_changed(self, event=None):
+        if hasattr(self, "mak_api_baud_entry") and self.mak_api_baud_entry.winfo_exists():
+            val = self.mak_api_baud_entry.get().strip()
+            self.saved_mak_api_baud = val
+            try:
+                config.mak_api_baud = int(val) if val else 0
+            except ValueError:
+                pass
+
+    def _refresh_mak_api_ports(self):
+        try:
+            from src.utils.mouse.MakAPI import find_mak_ports
+
+            ports = find_mak_ports()
+        except Exception as e:
+            self._set_status_indicator(f"Status: MAK API ports failed: {e}", COLOR_DANGER)
+            return
+        if not ports:
+            self._set_status_indicator("Status: No MAK CH343/CH340 ports found", COLOR_WARNING)
+            return
+        path = str(ports[0]).strip()
+        if path:
+            self.saved_mak_api_port = path
+            config.mak_api_port = path
+            if hasattr(self, "mak_api_port_entry") and self.mak_api_port_entry.winfo_exists():
+                self.mak_api_port_entry.delete(0, "end")
+                self.mak_api_port_entry.insert(0, path)
+        self._set_status_indicator(f"Status: MAK API ports: {', '.join(ports)}", COLOR_TEXT)
+
     def _on_ferrum_connection_type_selected(self, val):
         connection_type_norm = str(val).strip().lower()
         if connection_type_norm not in ("auto", "serial", "network", "usb_hid"):
@@ -2406,6 +2541,8 @@ class ViewerApp(ctk.CTk):
             mode = "DHZ"
         elif mode_norm in ("makxdmakapi", "makxd_makapi", "makxd-makapi", "makxd makapi", "makxd_mak", "makxd-mak"):
             mode = "MakxdMakAPI"
+        elif mode_norm in ("makapi", "mak_api", "mak-api", "mak api"):
+            mode = "MakAPI"
         elif mode_norm in ("makv2", "mak_v2", "mak-v2"):
             mode = "MakV2"
         elif mode_norm in ("makcucontroller", "makcu_controller", "makcu-controller", "makcu controller"):
@@ -2416,6 +2553,8 @@ class ViewerApp(ctk.CTk):
             mode = "SendInput"
         elif mode_norm == "ferrum":
             mode = "Ferrum"
+        elif mode_norm in ("medius", "k4tech", "k4"):
+            mode = "Medius"
         else:
             mode = "Serial"
         payload = {"mode": mode}
@@ -2597,6 +2736,25 @@ class ViewerApp(ctk.CTk):
             })
         elif mode == "SendInput":
             pass
+        elif mode == "Medius":
+            if hasattr(self, "medius_port_entry") and self.medius_port_entry.winfo_exists():
+                self.saved_medius_port = self.medius_port_entry.get().strip()
+            config.medius_port = self.saved_medius_port
+            payload.update({"medius_port": self.saved_medius_port})
+        elif mode == "MakAPI":
+            if hasattr(self, "mak_api_port_entry") and self.mak_api_port_entry.winfo_exists():
+                self.saved_mak_api_port = self.mak_api_port_entry.get().strip()
+            if hasattr(self, "mak_api_baud_entry") and self.mak_api_baud_entry.winfo_exists():
+                self.saved_mak_api_baud = self.mak_api_baud_entry.get().strip()
+            config.mak_api_port = self.saved_mak_api_port
+            try:
+                config.mak_api_baud = int(self.saved_mak_api_baud) if str(self.saved_mak_api_baud).strip() else 0
+            except ValueError:
+                config.mak_api_baud = 0
+            payload.update({
+                "mak_api_port": self.saved_mak_api_port,
+                "mak_api_baud": config.mak_api_baud,
+            })
 
         self._mouse_api_connecting = True
         self._mouse_api_connect_job_id += 1
@@ -2676,6 +2834,17 @@ class ViewerApp(ctk.CTk):
                     ferrum_dhz_port=payload.get("ferrum_dhz_port", ""),
                     ferrum_dhz_random=payload.get("ferrum_dhz_random", 0),
                 )
+            elif mode == "Medius":
+                success, error = switch_backend(
+                    "Medius",
+                    medius_port=payload.get("medius_port", ""),
+                )
+            elif mode == "MakAPI":
+                success, error = switch_backend(
+                    "MakAPI",
+                    mak_api_port=payload.get("mak_api_port", ""),
+                    mak_api_baud=payload.get("mak_api_baud", 0),
+                )
             elif False and mode == "Ferrum":
                 success, error = switch_backend(
                     "Ferrum",
@@ -2719,6 +2888,10 @@ class ViewerApp(ctk.CTk):
             elif mode == "Ferrum":
                 ferrum_mode = str(payload.get("ferrum_mode", "KmAPI"))
                 self._set_status_indicator(f"Status: Mouse API connected (Ferrum {ferrum_mode})", COLOR_TEXT)
+            elif mode == "Medius":
+                self._set_status_indicator("Status: Mouse API connected (Medius)", COLOR_TEXT)
+            elif mode == "MakAPI":
+                self._set_status_indicator("Status: Mouse API connected (MAK API)", COLOR_TEXT)
             else:
                 self._set_status_indicator("Status: Mouse API connected (Serial)", COLOR_TEXT)
             return
@@ -2737,7 +2910,17 @@ class ViewerApp(ctk.CTk):
         self._set_status_indicator(f"Status: Mouse API timeout ({mode})", COLOR_DANGER)
 
     def _update_capture_ui(self):
-        """鏍规摎閬告搰鐨勬崟鐛叉柟娉曟洿鏂?UI"""
+        """根據選擇的採集方法更新 UI"""
+        if not hasattr(self, "capture_content_frame"):
+            self._refresh_capture_entry_card()
+            return
+        try:
+            if not self.capture_content_frame.winfo_exists():
+                self._refresh_capture_entry_card()
+                return
+        except Exception:
+            self._refresh_capture_entry_card()
+            return
         # 淇濆瓨鐣跺墠 UDP 杓稿叆妗嗙殑鍊硷紙濡傛灉瀛樺湪锛?
         if hasattr(self, 'udp_ip_entry') and self.udp_ip_entry.winfo_exists():
             self.saved_udp_ip = self.udp_ip_entry.get()
@@ -3490,34 +3673,51 @@ class ViewerApp(ctk.CTk):
             ctk.CTkLabel(row, text=fmt, font=("Roboto", 9), text_color=COLOR_TEXT, width=120, anchor="w").pack(side="left", padx=4)
 
     def _probe_capture_card_device(self):
-        try:
-            from src.capture.CaptureCard import probe_capture_card_device
+        self._set_status_indicator("Status: Probing capture card...", COLOR_TEXT_DIM)
+        if hasattr(self, "capture_card_probe_info_label") and self.capture_card_probe_info_label.winfo_exists():
+            self.capture_card_probe_info_label.configure(text="Probing selected device...")
 
-            device_index = int(getattr(config, "capture_device_index", 0))
-            result = probe_capture_card_device(
-                device_index=device_index,
-                fourcc_values=["MJPG", "NV12", "YUY2", "YUYV", "BGR3"],
-            )
-            if hasattr(self, "capture_card_probe_info_label") and self.capture_card_probe_info_label.winfo_exists():
-                self.capture_card_probe_info_label.configure(text=str(result.get("message", "")))
+        device_index = int(getattr(config, "capture_device_index", 0))
 
-            formats = result.get("formats", []) if isinstance(result, dict) else []
-            if formats:
-                probe_text = f"Detected {len(formats)} mode(s)."
-                self._render_capture_card_probe_rows(formats)
-                self._set_status_indicator("Status: Capture card probe complete", COLOR_TEXT)
-            else:
-                probe_text = str(result.get("message", "No supported modes detected."))
-                self._render_capture_card_probe_rows([])
-                self._set_status_indicator("Status: Capture card probe found no modes", COLOR_WARNING)
+        def _worker():
+            try:
+                from src.capture.CaptureCard import probe_capture_card_device
 
-            if hasattr(self, "capture_card_probe_result_label") and self.capture_card_probe_result_label.winfo_exists():
-                self.capture_card_probe_result_label.configure(text=probe_text)
-        except Exception as e:
-            self._set_status_indicator(f"Status: Capture card probe failed: {e}", COLOR_DANGER)
+                result = probe_capture_card_device(
+                    device_index=device_index,
+                    fourcc_values=["MJPG", "NV12", "YUY2", "YUYV", "BGR3"],
+                )
+                error = None
+            except Exception as e:
+                result = {}
+                error = str(e)
+            self.after(0, lambda: self._on_capture_card_probe_done(result, error))
+
+        threading.Thread(target=_worker, daemon=True, name="CaptureCardProbe").start()
+
+    def _on_capture_card_probe_done(self, result, error):
+        if error:
+            self._set_status_indicator(f"Status: Capture card probe failed: {error}", COLOR_DANGER)
             self._render_capture_card_probe_rows([])
             if hasattr(self, "capture_card_probe_result_label") and self.capture_card_probe_result_label.winfo_exists():
-                self.capture_card_probe_result_label.configure(text=f"Probe failed: {e}")
+                self.capture_card_probe_result_label.configure(text=f"Probe failed: {error}")
+            return
+
+        if hasattr(self, "capture_card_probe_info_label") and self.capture_card_probe_info_label.winfo_exists():
+            self.capture_card_probe_info_label.configure(text=str(result.get("message", "")))
+
+        formats = result.get("formats", []) if isinstance(result, dict) else []
+        if formats:
+            probe_text = f"Detected {len(formats)} mode(s)."
+            self._render_capture_card_probe_rows(formats)
+            self._set_status_indicator("Status: Capture card probe complete", COLOR_TEXT)
+        else:
+            probe_text = str(result.get("message", "No supported modes detected."))
+            self._render_capture_card_probe_rows([])
+            self._set_status_indicator("Status: Capture card probe found no modes", COLOR_WARNING)
+
+        if hasattr(self, "capture_card_probe_result_label") and self.capture_card_probe_result_label.winfo_exists():
+            self.capture_card_probe_result_label.configure(text=probe_text)
 
     def _on_capture_card_format_selected(self, selected_format):
         fmt = str(selected_format or "").strip().upper()
@@ -7318,20 +7518,157 @@ class ViewerApp(ctk.CTk):
         except: pass
 
     # --- NDI & Capture Callbacks ---
+
+    def _capture_display_mode(self, mode=None):
+        internal = str(mode if mode is not None else getattr(self.capture, "mode", "NDI"))
+        if internal == "CaptureCard":
+            return "Capture Card (OpenCV)"
+        if internal == "CaptureCardGStreamer":
+            return "Capture Card (GStreamer)"
+        return internal
+
+    def _capture_internal_mode(self, display_name):
+        if display_name == "Capture Card (OpenCV)":
+            return "CaptureCard"
+        if display_name == "Capture Card (GStreamer)":
+            return "CaptureCardGStreamer"
+        return str(display_name)
+
+    def _capture_summary_text(self):
+        mode = self._capture_display_mode()
+        connected = False
+        try:
+            connected = bool(self.capture.is_connected())
+        except Exception:
+            connected = False
+        state = "Connected" if connected else "Disconnected"
+        extra = ""
+        internal = str(getattr(self.capture, "mode", ""))
+        if internal in ("CaptureCard", "CaptureCardGStreamer"):
+            extra = f"  ·  Device {int(getattr(config, 'capture_device_index', 0))}  {int(getattr(config, 'capture_width', 1920))}x{int(getattr(config, 'capture_height', 1080))}"
+        return f"{mode}  ·  {state}{extra}"
+
+    def _refresh_capture_entry_card(self):
+        if hasattr(self, "capture_entry_summary") and self.capture_entry_summary.winfo_exists():
+            self.capture_entry_summary.configure(text=self._capture_summary_text())
+        panel = getattr(self, "_capture_panel_window", None)
+        if panel is not None:
+            try:
+                if panel.winfo_exists():
+                    panel.refresh_status()
+            except Exception:
+                pass
+
+    def _add_capture_entry_card(self):
+        card = ctk.CTkFrame(
+            self.content_frame,
+            fg_color=COLOR_HARDWARE_PANEL,
+            corner_radius=12,
+            border_width=1,
+            border_color=COLOR_HARDWARE_PANEL_BORDER,
+            cursor="hand2",
+        )
+        card.pack(fill="x", pady=(8, 12))
+        header = ctk.CTkFrame(card, fg_color="transparent", cursor="hand2")
+        header.pack(fill="x", padx=14, pady=(12, 4))
+        ctk.CTkLabel(
+            header,
+            text="CAPTURE",
+            font=("Consolas", 12, "bold"),
+            text_color=COLOR_TEXT,
+            cursor="hand2",
+        ).pack(side="left")
+        ctk.CTkLabel(
+            header,
+            text="Open panel  ▶",
+            font=("Consolas", 10),
+            text_color=COLOR_ACCENT,
+            cursor="hand2",
+        ).pack(side="right")
+        self.capture_entry_summary = ctk.CTkLabel(
+            card,
+            text=self._capture_summary_text(),
+            font=("Roboto", 11),
+            text_color=COLOR_TEXT_DIM,
+            anchor="w",
+            cursor="hand2",
+        )
+        self.capture_entry_summary.pack(fill="x", padx=14, pady=(0, 14))
+        hint = ctk.CTkLabel(
+            card,
+            text="Click to open an independent capture panel. Switching capture card no longer rebuilds this tab.",
+            font=("Roboto", 9),
+            text_color=COLOR_TEXT_DIM,
+            anchor="w",
+            cursor="hand2",
+        )
+        hint.pack(fill="x", padx=14, pady=(0, 12))
+
+        for widget in (card, header, self.capture_entry_summary, hint):
+            widget.bind("<Button-1>", lambda _event: self._open_capture_panel())
+
+    def _open_capture_panel(self):
+        existing = getattr(self, "_capture_panel_window", None)
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.lift()
+                    existing.focus_force()
+                    return
+            except Exception:
+                pass
+
+        def _on_close():
+            self._capture_panel_window = None
+            self.capture_content_frame = None
+            self.capture_method_option = None
+            self._refresh_capture_entry_card()
+
+        panel = CapturePanelWindow(self, on_close=_on_close)
+        self._capture_panel_window = panel
+        self._build_capture_panel_body(panel.body)
+        self._update_capture_ui()
+
+    def _build_capture_panel_body(self, parent):
+        self.capture_method_var.set(self._capture_display_mode(self.capture.mode))
+        self.capture_method_option = self._add_option_row_in_frame(
+            parent,
+            "Method",
+            ["NDI", "UDP", "Teleport", "Capture Card (OpenCV)", "Capture Card (GStreamer)", "MSS"],
+            self._on_capture_method_changed,
+        )
+        self.capture_method_option.set(self._capture_display_mode(self.capture.mode))
+        self._add_spacer_in_frame(parent)
+        self.capture_content_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        self.capture_content_frame.pack(fill="x", pady=5)
     
     def _on_capture_method_changed(self, val):
         self.capture_method_var.set(val)
-        # Map UI display name to internal mode
-        internal_mode = val
-        if val == "Capture Card (OpenCV)":
-            internal_mode = "CaptureCard"
-        elif val == "Capture Card (GStreamer)":
-            internal_mode = "CaptureCardGStreamer"
-        
-        self.capture.set_mode(internal_mode)
-        config.capture_mode = internal_mode  # 淇濆瓨鍒?config
+        internal_mode = self._capture_internal_mode(val)
+        previous_mode = str(getattr(self.capture, "mode", ""))
+        config.capture_mode = internal_mode
+        self._set_status_indicator(f"Status: Switching to {val}...", COLOR_TEXT_DIM)
+        self._capture_switching = True
+        self._capture_connect_job_id += 1
+
+        def _switch():
+            try:
+                self.capture.set_mode(internal_mode)
+                error = None
+            except Exception as e:
+                error = str(e)
+            self.after(0, lambda: self._on_capture_mode_switched(val, internal_mode, previous_mode, error))
+
+        threading.Thread(target=_switch, daemon=True, name="CaptureModeSwitch").start()
+
+    def _on_capture_mode_switched(self, display_name, internal_mode, previous_mode, error):
+        self._capture_switching = False
+        if error:
+            self._set_status_indicator(f"Status: Capture switch failed: {error}", COLOR_DANGER)
+        else:
+            self._set_status_indicator(f"Status: Mode {display_name}", COLOR_TEXT)
         self._update_capture_ui()
-        self._set_status_indicator(f"Status: Mode {val}", COLOR_TEXT)
+        self._refresh_capture_entry_card()
 
     def _process_source_updates(self):
         if self.capture.mode == "NDI":
@@ -7455,46 +7792,61 @@ class ViewerApp(ctk.CTk):
                 self._udp_retry_count = 0
     
     def _connect_capture_card(self):
-        """閫ｆ帴 CaptureCard"""
-        if self.capture.mode in ["CaptureCard", "CaptureCardGStreamer"]:
-            # 纰轰繚閰嶇疆宸叉洿鏂?
-            if hasattr(self, 'capture_card_device_option') and self.capture_card_device_option.winfo_exists():
-                self._on_capture_card_device_selected(self.capture_card_device_option.get())
-            
-            if hasattr(self, 'capture_card_width_entry') and hasattr(self, 'capture_card_height_entry'):
-                try:
-                    width = int(self.capture_card_width_entry.get())
-                    height = int(self.capture_card_height_entry.get())
-                    config.capture_width = width
-                    config.capture_height = height
-                    # 鏇存柊涓績榛為’绀猴紙鍥犵偤鍒嗚鲸鐜囨敼璁婂彲鑳藉奖闊夸腑蹇冮粸锛?
-                    self._update_capture_card_center_display()
-                except ValueError:
-                    pass
-            
-            # 鏇存柊涓績榛為’绀?
-            self._update_capture_card_center_display()
-            
-            success, error = self.capture.connect_capture_card(config)
-            if success:
-                mode_name = "CaptureCardGStreamer" if self.capture.mode == "CaptureCardGStreamer" else "CaptureCard"
-                if (
-                    mode_name == "CaptureCardGStreamer"
-                    and self.capture.capture_card_gstreamer_camera
-                    and hasattr(self.capture.capture_card_gstreamer_camera, "has_frame")
-                    and not self.capture.capture_card_gstreamer_camera.has_frame()
-                ):
-                    self._set_status_indicator(
-                        "Status: CaptureCardGStreamer connected (waiting first frame)",
-                        COLOR_WARNING,
-                    )
-                    log_print("[UI] CaptureCardGStreamer connected, waiting for first frame.")
-                else:
-                    self._set_status_indicator(f"Status: {mode_name} connected", COLOR_TEXT)
-                    log_print(f"[UI] {mode_name} connection successful.")
+        """Connect CaptureCard off the UI thread so DirectShow open cannot freeze the panel."""
+        if self.capture.mode not in ["CaptureCard", "CaptureCardGStreamer"]:
+            return
+        if hasattr(self, "capture_card_device_option") and self.capture_card_device_option.winfo_exists():
+            self._on_capture_card_device_selected(self.capture_card_device_option.get())
+
+        if hasattr(self, "capture_card_width_entry") and hasattr(self, "capture_card_height_entry"):
+            try:
+                width = int(self.capture_card_width_entry.get())
+                height = int(self.capture_card_height_entry.get())
+                config.capture_width = width
+                config.capture_height = height
+                self._update_capture_card_center_display()
+            except ValueError:
+                pass
+
+        self._update_capture_card_center_display()
+        self._capture_connect_job_id += 1
+        job_id = self._capture_connect_job_id
+        mode_name = "CaptureCardGStreamer" if self.capture.mode == "CaptureCardGStreamer" else "CaptureCard"
+        self._set_status_indicator(f"Status: {mode_name} connecting...", COLOR_TEXT_DIM)
+
+        def _worker():
+            try:
+                success, error = self.capture.connect_capture_card(config)
+            except Exception as e:
+                success, error = False, str(e)
+            self.after(0, lambda: self._on_capture_card_connect_done(job_id, success, error))
+
+        threading.Thread(target=_worker, daemon=True, name="CaptureCardConnect").start()
+
+    def _on_capture_card_connect_done(self, job_id, success, error):
+        if job_id != getattr(self, "_capture_connect_job_id", 0):
+            return
+        mode_name = "CaptureCardGStreamer" if self.capture.mode == "CaptureCardGStreamer" else "CaptureCard"
+        if success:
+            waiting = (
+                mode_name == "CaptureCardGStreamer"
+                and self.capture.capture_card_gstreamer_camera
+                and hasattr(self.capture.capture_card_gstreamer_camera, "has_frame")
+                and not self.capture.capture_card_gstreamer_camera.has_frame()
+            )
+            if waiting:
+                self._set_status_indicator(
+                    "Status: CaptureCardGStreamer connected (waiting first frame)",
+                    COLOR_WARNING,
+                )
+                log_print("[UI] CaptureCardGStreamer connected, waiting for first frame.")
             else:
-                self._set_status_indicator(f"Status: CaptureCard connect failed: {error}", COLOR_DANGER)
-                log_print(f"[UI] CaptureCard connection failed: {error}")
+                self._set_status_indicator(f"Status: {mode_name} connected", COLOR_TEXT)
+                log_print(f"[UI] {mode_name} connection successful.")
+        else:
+            self._set_status_indicator(f"Status: CaptureCard connect failed: {error}", COLOR_DANGER)
+            log_print(f"[UI] CaptureCard connection failed: {error}")
+        self._refresh_capture_entry_card()
 
     # --- MSS Callbacks ---
     def _on_mss_monitor_changed(self, event=None):
@@ -7680,6 +8032,8 @@ class ViewerApp(ctk.CTk):
             return "DHZ"
         if mode_norm in ("makxdmakapi", "makxd_makapi", "makxd-makapi", "makxd makapi", "makxd_mak", "makxd-mak"):
             return "MakxdMakAPI"
+        if mode_norm in ("makapi", "mak_api", "mak-api", "mak api"):
+            return "MakAPI"
         if mode_norm in ("makv2binary", "makv2_binary", "makv2-binary", "binary"):
             return "MakV2Binary"
         if mode_norm in ("makv2", "mak_v2", "mak-v2"):
@@ -7692,6 +8046,8 @@ class ViewerApp(ctk.CTk):
             return "SendInput"
         if mode_norm == "ferrum":
             return "Ferrum"
+        if mode_norm in ("medius", "k4tech", "k4"):
+            return "Medius"
         return "Serial"
 
     def _normalize_keyboard_api_name(self, mode):
@@ -7701,6 +8057,8 @@ class ViewerApp(ctk.CTk):
             return "Follow Mouse API"
         if lowered == "serial (makcu)":
             return "Serial (Makcu)"
+        if lowered in ("makapi", "mak_api", "mak-api", "mak api"):
+            return "MAK API"
         return self._normalize_mouse_api_name(raw)
 
     def _supports_trigger_strafe_ui(self, mode=None) -> bool:
@@ -7711,7 +8069,7 @@ class ViewerApp(ctk.CTk):
             return bool(mouse_backend.supports_trigger_strafe_ui(selected_mode))
         except Exception:
             normalized = self._normalize_mouse_api_name(selected_mode)
-            return normalized in {"SendInput", "Net", "KmboxA", "DHZ", "Ferrum", "MakcuController"}
+            return normalized in {"SendInput", "Net", "KmboxA", "DHZ", "Ferrum", "MakcuController", "Medius", "MakAPI"}
 
     def _supports_keyboard_state(self, mode=None) -> bool:
         if not bool(getattr(config, "keyboard_api_enabled", False)):
@@ -7725,7 +8083,7 @@ class ViewerApp(ctk.CTk):
             return bool(mouse_backend.supports_keyboard_state(selected_mode))
         except Exception:
             normalized = self._normalize_mouse_api_name(selected_mode)
-            return normalized in {"SendInput", "Net", "KmboxA", "DHZ", "MakcuController"}
+            return normalized in {"SendInput", "Net", "KmboxA", "DHZ", "MakcuController", "Medius", "MakAPI"}
 
     def _toggle_hardware_info_details(self):
         self._hardware_info_expanded = not bool(getattr(self, "_hardware_info_expanded", False))
@@ -7873,6 +8231,23 @@ class ViewerApp(ctk.CTk):
         elif mode == "SendInput":
             details.append("Injection: Win32 SendInput")
             details.append("Transport: Local OS API")
+        elif mode == "MakAPI":
+            cfg_port = str(getattr(config, "mak_api_port", "") or "auto")
+            cfg_baud = str(getattr(config, "mak_api_baud", 0) or "auto")
+            details.append(f"Port: {cfg_port}")
+            details.append(f"Baud: {cfg_baud}")
+            details.append("Protocol: MAK_API DE AD binary frames")
+            try:
+                from src.utils.mouse.MakAPI import connection_info
+
+                info = connection_info() or {}
+                if info.get("port"):
+                    details.append(f"Active Port: {info.get('port')}")
+                    details.append(f"Active Baud: {info.get('baud')}")
+                    details.append(f"Device kinds: 0x{int(info.get('kinds') or 0):02X}")
+                    details.append(f"Firmware: {info.get('firmware')}")
+            except Exception:
+                pass
         else:
             serial_mode = str(getattr(config, "serial_port_mode", "Auto")).strip().lower()
             serial_mode_label = "Manual" if serial_mode == "manual" else "Auto"
@@ -7945,6 +8320,7 @@ class ViewerApp(ctk.CTk):
         else:
             self._set_status_indicator("Status: Offline", COLOR_TEXT_DIM)
         self._update_hardware_status_ui()
+        self._refresh_capture_entry_card()
         self.after(500, self._update_connection_status_loop)
 
     def _update_performance_stats(self):

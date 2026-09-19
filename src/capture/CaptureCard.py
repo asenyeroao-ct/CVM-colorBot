@@ -8,6 +8,7 @@ import cv2
 import ctypes
 import json
 import subprocess
+import threading
 from typing import Dict, List, Optional, Tuple
 
 
@@ -311,11 +312,20 @@ class CaptureCardCamera:
         return frame
 
     def stop(self):
-        """Stop capture card camera."""
+        """Stop capture card camera without blocking the UI thread."""
         self.running = False
-        if self.cap:
-            self.cap.release()
-            self.cap = None
+        cap = self.cap
+        self.cap = None
+        if cap is None:
+            return
+
+        def _release():
+            try:
+                cap.release()
+            except Exception as e:
+                log_print(f"[CaptureCard] Release failed: {e}")
+
+        threading.Thread(target=_release, daemon=True, name="CaptureCardRelease").start()
 
 
 def get_capture_card_region(config) -> Tuple[int, int, int, int]:
@@ -481,13 +491,61 @@ def _decode_fourcc_value(fourcc_value) -> str:
         return "UNKN"
 
 
-def enumerate_capture_card_devices(max_index: int = 10) -> List[Dict[str, str]]:
-    """Enumerate likely OpenCV DShow capture devices / 掃描可用 capture card 裝置."""
+def enumerate_capture_card_devices(max_index: int = 10, probe_open: bool = False) -> List[Dict[str, str]]:
+    """Enumerate likely OpenCV DShow capture devices / 掃描可用 capture card 裝置.
+
+    Fast path (probe_open=False) uses Windows driver names only and does not
+    open VideoCapture, which otherwise freezes the UI on DirectShow.
+    """
     devices: List[Dict[str, str]] = []
     upper = max(0, int(max_index))
     device_names = _enumerate_windows_capture_device_names(upper)
     pnp_capture_names = _enumerate_windows_pnp_capture_names()
     pnp_name_cursor = 0
+
+    if not probe_open:
+        used_indexes = set()
+        for device_index, name in sorted(device_names.items()):
+            label_name = str(name).strip() or f"Device {device_index}"
+            devices.append(
+                {
+                    "index": str(device_index),
+                    "name": label_name,
+                    "label": f"{label_name} [#{device_index}]",
+                    "summary": "Windows capture device",
+                }
+            )
+            used_indexes.add(int(device_index))
+
+        for name in pnp_capture_names:
+            if any(item["name"] == name for item in devices):
+                continue
+            next_index = 0
+            while next_index in used_indexes:
+                next_index += 1
+            if next_index > upper:
+                break
+            devices.append(
+                {
+                    "index": str(next_index),
+                    "name": str(name),
+                    "label": f"{name} [#{next_index}]",
+                    "summary": "PnP capture device",
+                }
+            )
+            used_indexes.add(next_index)
+
+        if not devices:
+            for device_index in range(min(4, upper) + 1):
+                devices.append(
+                    {
+                        "index": str(device_index),
+                        "name": f"Device {device_index}",
+                        "label": f"Device {device_index} [#{device_index}]",
+                        "summary": "Fallback index",
+                    }
+                )
+        return devices
 
     for device_index in range(upper + 1):
         cap = None
