@@ -23,7 +23,7 @@ from src.utils.debug_logger import get_recent_logs, clear_logs, get_log_count, l
 from src.utils.mouse.keycodes import to_vk_code
 from src.utils.updater import get_update_checker
 from src.ui_hsv_preview import HsvPreviewWindow
-from src.ui_capture_panel import CapturePanelWindow
+from src.utils.i18n import heading, i18n, t
 
 # --- Theme constants (霓虹暗色主題 + Neon dark inspired by reference) ---
 THEME_PRESETS = {
@@ -244,6 +244,7 @@ class ViewerApp(ctk.CTk):
         self.title("CVM colorBot")
         self.geometry("1280x950")
         self._legacy_ui_mode = bool(getattr(config, "legacy_ui_mode", False))
+        config.language = i18n.set_language(getattr(config, "language", "en"))
         _apply_theme_preset("classic" if self._legacy_ui_mode else "neon")
         
         # 注意: 若啟用 overrideredirect(True)，系統框線與 taskbar 行為可能不同
@@ -303,6 +304,7 @@ class ViewerApp(ctk.CTk):
         self.saved_teleport_stream_key = str(getattr(config, "teleport_stream_key", ""))
         self._teleport_stream_display_to_key = {}
         self._capture_card_display_to_index = {}
+        self._capture_card_display_to_name = {}
         self.saved_ndi_source = getattr(config, "last_ndi_source", None)
         self.saved_mouse_api = getattr(config, "mouse_api", "Serial")
         self.saved_keyboard_api_enabled = bool(getattr(config, "keyboard_api_enabled", False))
@@ -356,9 +358,13 @@ class ViewerApp(ctk.CTk):
         self._mouse_api_connect_timeout_ms = 12000
         self._keyboard_api_connecting = False
         self._serial_baud_switching = False
-        self._capture_panel_window = None
         self._capture_switching = False
+        self._cached_capture_card_devices = []
         self._capture_connect_job_id = 0
+        self._runtime_active = False
+        self._runtime_busy = False
+        self._runtime_job_id = 0
+        self._ignore_settings_events = False
         
         # --- Build layout ---
         self._build_layout()
@@ -367,6 +373,7 @@ class ViewerApp(ctk.CTk):
         self.after(100, self._process_source_updates)
         self.after(500, self._update_connection_status_loop)
         self.after(200, self._load_initial_config)
+        self.after(800, self._maybe_auto_start_runtime)
         self.after(self._clipboard_import_poll_interval_ms, self._poll_clipboard_config_import)
         self.after(300, self._update_performance_stats)  # 更新效能統計 Performance stats
         self.after(50, self._update_mouse_input_debug)  # 更新滑鼠輸入監控 Mouse input debug
@@ -574,7 +581,7 @@ class ViewerApp(ctk.CTk):
         # 主題切換 Theme toggle
         self.theme_btn = ctk.CTkButton(
             bottom_frame,
-            text="Dark Mode",
+            text=t("Dark Mode") if ctk.get_appearance_mode() == "Dark" else t("Light Mode"),
             fg_color=COLOR_SURFACE,
             text_color=COLOR_TEXT_DIM,
             hover_color=COLOR_SURFACE,
@@ -588,7 +595,7 @@ class ViewerApp(ctk.CTk):
 
         self.ui_style_btn = ctk.CTkButton(
             bottom_frame,
-            text=f"UI Style: {'Classic' if self._legacy_ui_mode else 'Neon'}",
+            text=t("UI Style: {style}", style=t("Classic") if self._legacy_ui_mode else t("Neon")),
             fg_color=COLOR_SURFACE,
             text_color=COLOR_TEXT_DIM,
             hover_color=COLOR_SURFACE,
@@ -603,7 +610,7 @@ class ViewerApp(ctk.CTk):
         # 效能資訊 Performance labels
         self.fps_label = ctk.CTkLabel(
             bottom_frame, 
-            text="FPS: --", 
+            text=t("FPS: --"), 
             text_color=COLOR_TEXT_DIM, 
             font=("Roboto", 9), 
             anchor="w"
@@ -612,7 +619,7 @@ class ViewerApp(ctk.CTk):
         
         self.decode_delay_label = ctk.CTkLabel(
             bottom_frame, 
-            text="Decode: -- ms", 
+            text=t("Decode: -- ms"), 
             text_color=COLOR_TEXT_DIM, 
             font=("Roboto", 9), 
             anchor="w"
@@ -621,7 +628,7 @@ class ViewerApp(ctk.CTk):
         
         self.total_delay_label = ctk.CTkLabel(
             bottom_frame, 
-            text="Delay: -- ms", 
+            text=t("Delay: -- ms"), 
             text_color=COLOR_TEXT_DIM, 
             font=("Roboto", 9), 
             anchor="w"
@@ -631,7 +638,7 @@ class ViewerApp(ctk.CTk):
         # 狀態指示器 Status indicator
         self.status_indicator = ctk.CTkLabel(
             bottom_frame,
-            text="Status: Offline",
+            text=t("Status: Offline"),
             text_color=COLOR_TEXT_DIM,
             font=("Roboto", 10),
             anchor="w",
@@ -641,7 +648,7 @@ class ViewerApp(ctk.CTk):
 
         self.hardware_type_label = ctk.CTkLabel(
             bottom_frame,
-            text=f"Hardware: {getattr(config, 'mouse_api', 'Serial')}",
+            text=t("Hardware: {mode}", mode=getattr(config, "mouse_api", "Serial")),
             text_color=COLOR_TEXT_DIM,
             font=("Roboto", 10),
             anchor="w",
@@ -650,7 +657,7 @@ class ViewerApp(ctk.CTk):
 
         self.hardware_conn_label = ctk.CTkLabel(
             bottom_frame,
-            text="Hardware Status: Disconnected",
+            text=t("Hardware Status: Disconnected"),
             text_color=COLOR_DANGER,
             font=("Roboto", 10),
             anchor="w",
@@ -660,7 +667,7 @@ class ViewerApp(ctk.CTk):
         self._hardware_info_expanded = False
         self.hardware_details_toggle = ctk.CTkButton(
             bottom_frame,
-            text="Hardware Info",
+            text=t("Hardware Info"),
             command=self._toggle_hardware_info_details,
             fg_color=COLOR_SURFACE,
             hover_color=COLOR_SURFACE,
@@ -681,11 +688,26 @@ class ViewerApp(ctk.CTk):
             justify="left",
         )
         self._update_hardware_status_ui()
+
+        self.runtime_btn = ctk.CTkButton(
+            bottom_frame,
+            text=t("START"),
+            command=self._toggle_runtime,
+            fg_color=COLOR_ACCENT,
+            hover_color=COLOR_ACCENT_HOVER,
+            text_color="#04140A",
+            font=("Consolas", 14, "bold"),
+            anchor="center",
+            height=36,
+            corner_radius=8,
+        )
+        self.runtime_btn.pack(fill="x", pady=(10, 0))
+        self._refresh_runtime_button()
         
         # 設定按鈕 Settings button
-        settings_btn = ctk.CTkButton(
+        self.settings_btn = ctk.CTkButton(
             bottom_frame,
-            text="Settings",
+            text=t("Settings"),
             command=self._open_settings_window,
             fg_color=COLOR_SURFACE,
             hover_color=COLOR_BORDER,
@@ -695,21 +717,378 @@ class ViewerApp(ctk.CTk):
             height=30,
             corner_radius=8
         )
-        settings_btn.pack(fill="x", pady=(10, 0))
+        self.settings_btn.pack(fill="x", pady=(8, 0))
 
     def _set_status_indicator(self, text, text_color=COLOR_TEXT_DIM):
         if not hasattr(self, "status_indicator") or not self.status_indicator.winfo_exists():
             return
-        msg = str(text).replace("\n", " ").strip()
+        msg = t(str(text).replace("\n", " ").strip())
         max_chars = 30
         if len(msg) > max_chars:
             msg = msg[: max_chars - 3] + "..."
         self.status_indicator.configure(text=msg, text_color=text_color)
 
+    def _refresh_runtime_button(self):
+        if not hasattr(self, "runtime_btn") or not self.runtime_btn.winfo_exists():
+            return
+        if getattr(self, "_runtime_busy", False):
+            label = t("STOPPING...") if getattr(self, "_runtime_active", False) else t("STARTING...")
+            self.runtime_btn.configure(
+                text=label,
+                state="disabled",
+                fg_color=COLOR_SURFACE,
+                hover_color=COLOR_SURFACE,
+                text_color=COLOR_TEXT_DIM,
+            )
+            return
+        if getattr(self, "_runtime_active", False):
+            self.runtime_btn.configure(
+                text=t("STOP"),
+                state="normal",
+                fg_color=COLOR_DANGER,
+                hover_color="#FF6B86",
+                text_color="#140408",
+            )
+            return
+        self.runtime_btn.configure(
+            text=t("START"),
+            state="normal",
+            fg_color=COLOR_ACCENT,
+            hover_color=COLOR_ACCENT_HOVER,
+            text_color="#04140A",
+        )
+
+    def _runtime_settings_locked(self):
+        return bool(getattr(self, "_runtime_active", False) or getattr(self, "_runtime_busy", False))
+
+    def _set_widget_tree_enabled(self, widget, enabled):
+        if widget is None:
+            return
+        try:
+            if not widget.winfo_exists():
+                return
+        except Exception:
+            return
+        state = "normal" if enabled else "disabled"
+        try:
+            widget.configure(state=state)
+        except Exception:
+            pass
+        try:
+            children = widget.winfo_children()
+        except Exception:
+            children = []
+        for child in children:
+            self._set_widget_tree_enabled(child, enabled)
+
+    def _apply_runtime_settings_lock(self):
+        enabled = not self._runtime_settings_locked()
+        for attr in ("mouse_hardware_frame", "keyboard_hardware_frame", "capture_settings_frame"):
+            self._set_widget_tree_enabled(getattr(self, attr, None), enabled)
+        if enabled:
+            try:
+                if hasattr(self, "keyboard_api_option") and self.keyboard_api_option.winfo_exists():
+                    keyboard_enabled = bool(getattr(config, "keyboard_api_enabled", False))
+                    self.keyboard_api_option.configure(state="normal" if keyboard_enabled else "disabled")
+            except Exception:
+                pass
+
+    def _restore_locked_mouse_api_option(self):
+        if not hasattr(self, "mouse_api_option"):
+            return
+        try:
+            if not self.mouse_api_option.winfo_exists():
+                return
+        except Exception:
+            return
+        raw = str(getattr(self, "saved_mouse_api", getattr(config, "mouse_api", "Serial")))
+        mapping = {
+            "Serial": "Serial (Makcu)",
+            "MakAPI": "MAK API",
+        }
+        display = mapping.get(raw, raw)
+        self._ignore_settings_events = True
+        try:
+            self.mouse_api_option.set(display)
+        except Exception:
+            pass
+        self._ignore_settings_events = False
+
+    def _restore_locked_capture_method_option(self):
+        if not hasattr(self, "capture_method_option"):
+            return
+        try:
+            if not self.capture_method_option.winfo_exists():
+                return
+        except Exception:
+            return
+        self._ignore_settings_events = True
+        try:
+            self.capture_method_option.set(self._capture_display_mode(self.capture.mode))
+        except Exception:
+            pass
+        self._ignore_settings_events = False
+
+    def _restore_locked_keyboard_api_option(self):
+        if not hasattr(self, "keyboard_api_option"):
+            return
+        try:
+            if not self.keyboard_api_option.winfo_exists():
+                return
+        except Exception:
+            return
+        self._ignore_settings_events = True
+        try:
+            self.keyboard_api_option.set(
+                self._normalize_keyboard_api_name(getattr(config, "keyboard_api", "Follow Mouse API"))
+            )
+        except Exception:
+            pass
+        self._ignore_settings_events = False
+
+    def _warn_runtime_settings_locked(self, kind="hardware"):
+        key = (
+            "Status: Stop first to change capture"
+            if kind == "capture"
+            else "Status: Stop first to change hardware"
+        )
+        self._set_status_indicator(t(key), COLOR_WARNING)
+
+    def _invalidate_runtime(self):
+        self._runtime_job_id = getattr(self, "_runtime_job_id", 0) + 1
+        self._runtime_active = False
+        self._runtime_busy = False
+        self._mouse_api_connecting = False
+        self._refresh_runtime_button()
+
+    def _disconnect_runtime_backends(self):
+        try:
+            from src.utils import mouse as mouse_backend
+
+            mouse_backend.disconnect_all()
+        except Exception:
+            pass
+        try:
+            self.capture.disconnect()
+        except Exception:
+            pass
+
+    def _maybe_auto_start_runtime(self):
+        if not bool(getattr(config, "auto_connect_mouse_api", False)):
+            return
+        if getattr(self, "_runtime_active", False) or getattr(self, "_runtime_busy", False):
+            return
+        self._start_runtime()
+
+    def _toggle_runtime(self):
+        if getattr(self, "_runtime_busy", False):
+            return
+        if getattr(self, "_runtime_active", False):
+            self._stop_runtime()
+            return
+        self._start_runtime()
+
+    def _start_runtime(self):
+        if getattr(self, "_runtime_busy", False) or getattr(self, "_runtime_active", False):
+            return
+        if getattr(self, "_serial_baud_switching", False):
+            self._set_status_indicator("Status: Serial baud switching...", COLOR_TEXT_DIM)
+            return
+        mouse_payload = self._connect_mouse_api(start_async=False)
+        if not mouse_payload:
+            return
+        capture_payload = self._snapshot_capture_connect_payload()
+        self._runtime_busy = True
+        self._runtime_job_id = getattr(self, "_runtime_job_id", 0) + 1
+        job_id = self._runtime_job_id
+        self._refresh_runtime_button()
+        self._apply_runtime_settings_lock()
+        self._set_status_indicator(t("Status: Starting hardware + capture..."), COLOR_TEXT_DIM)
+        threading.Thread(
+            target=self._start_runtime_worker,
+            args=(job_id, mouse_payload, capture_payload),
+            daemon=True,
+            name="RuntimeStart",
+        ).start()
+
+    def _start_runtime_worker(self, job_id, mouse_payload, capture_payload):
+        hw_ok, hw_err = self._execute_mouse_api_connect(mouse_payload)
+        cap_ok, cap_err = False, "capture not attempted"
+        if job_id != getattr(self, "_runtime_job_id", 0):
+            self._disconnect_runtime_backends()
+            return
+        if hw_ok:
+            cap_ok, cap_err = self._connect_capture_backend_sync(capture_payload)
+        if job_id != getattr(self, "_runtime_job_id", 0) or not (hw_ok and cap_ok):
+            self._disconnect_runtime_backends()
+            if job_id != getattr(self, "_runtime_job_id", 0):
+                return
+        self.after(
+            0,
+            lambda: self._on_runtime_start_done(job_id, hw_ok, hw_err, cap_ok, cap_err, mouse_payload, capture_payload),
+        )
+
+    def _on_runtime_start_done(self, job_id, hw_ok, hw_err, cap_ok, cap_err, mouse_payload, capture_payload):
+        if job_id != getattr(self, "_runtime_job_id", 0):
+            return
+        self._runtime_busy = False
+        self._mouse_api_connecting = False
+        if hw_ok and cap_ok:
+            self._runtime_active = True
+            hw_name = mouse_payload.get("mode", "Hardware")
+            cap_name = capture_payload.get("mode", "Capture")
+            self._set_status_indicator(t("Status: Running ({hw} + {cap})", hw=hw_name, cap=cap_name), COLOR_SUCCESS)
+            if cap_name == "NDI":
+                self.after(500, self._update_ndi_fov_sliders_after_connect)
+            elif cap_name == "UDP":
+                self.after(500, self._update_udp_fov_sliders_after_connect)
+        else:
+            self._runtime_active = False
+            if not hw_ok:
+                self._set_status_indicator(t("Status: Hardware failed: {error}", error=hw_err), COLOR_DANGER)
+            else:
+                self._set_status_indicator(t("Status: Capture failed: {error}", error=cap_err), COLOR_DANGER)
+        self._refresh_runtime_button()
+        self._update_hardware_status_ui()
+        self._apply_runtime_settings_lock()
+        self._refresh_capture_entry_card()
+
+    def _stop_runtime(self):
+        if getattr(self, "_runtime_busy", False) and getattr(self, "_runtime_active", False):
+            return
+        self._runtime_busy = True
+        self._runtime_job_id = getattr(self, "_runtime_job_id", 0) + 1
+        job_id = self._runtime_job_id
+        self._refresh_runtime_button()
+        self._apply_runtime_settings_lock()
+        self._set_status_indicator(t("Status: Stopping..."), COLOR_TEXT_DIM)
+        threading.Thread(
+            target=self._stop_runtime_worker,
+            args=(job_id,),
+            daemon=True,
+            name="RuntimeStop",
+        ).start()
+
+    def _stop_runtime_worker(self, job_id):
+        self._disconnect_runtime_backends()
+        self.after(0, lambda: self._on_runtime_stop_done(job_id))
+
+    def _on_runtime_stop_done(self, job_id=None):
+        if job_id is not None and job_id != getattr(self, "_runtime_job_id", 0):
+            return
+        self._runtime_busy = False
+        self._runtime_active = False
+        self._mouse_api_connecting = False
+        self._set_status_indicator(t("Status: Stopped"), COLOR_TEXT_DIM)
+        self._refresh_runtime_button()
+        self._update_hardware_status_ui()
+        self._apply_runtime_settings_lock()
+        self._refresh_capture_entry_card()
+
+    def _snapshot_capture_connect_payload(self):
+        mode = str(getattr(self.capture, "mode", getattr(config, "capture_mode", "NDI")))
+        payload = {"mode": mode}
+        if mode == "NDI":
+            selected = str(self.saved_ndi_source or getattr(config, "last_ndi_source", "") or "").strip()
+            if hasattr(self, "source_option") and self.source_option.winfo_exists():
+                current = str(self.source_option.get() or "").strip()
+                if current not in ("(Scanning...)", "(no sources)", ""):
+                    selected = current
+            payload["ndi_source"] = selected
+        elif mode == "UDP":
+            ip = str(getattr(self, "saved_udp_ip", getattr(config, "udp_ip", "127.0.0.1")))
+            port = str(getattr(self, "saved_udp_port", getattr(config, "udp_port", "1234")))
+            if hasattr(self, "udp_ip_entry") and self.udp_ip_entry.winfo_exists():
+                ip = self.udp_ip_entry.get().strip()
+            if hasattr(self, "udp_port_entry") and self.udp_port_entry.winfo_exists():
+                port = self.udp_port_entry.get().strip()
+            payload.update({"udp_ip": ip, "udp_port": port})
+        elif mode == "Teleport":
+            host = str(getattr(config, "teleport_host", getattr(self, "saved_teleport_host", ""))).strip()
+            port_value = str(getattr(config, "teleport_port", getattr(self, "saved_teleport_port", "0"))).strip()
+            stream_key = str(getattr(config, "teleport_stream_key", getattr(self, "saved_teleport_stream_key", ""))).strip()
+            if hasattr(self, "teleport_host_entry") and self.teleport_host_entry.winfo_exists():
+                host = self.teleport_host_entry.get().strip()
+            if hasattr(self, "teleport_port_entry") and self.teleport_port_entry.winfo_exists():
+                port_value = self.teleport_port_entry.get().strip()
+            if hasattr(self, "teleport_stream_option") and self.teleport_stream_option.winfo_exists():
+                selected_display = self.teleport_stream_option.get()
+                stream_key = str(self._teleport_stream_display_to_key.get(str(selected_display), "")).strip()
+            payload.update({"teleport_host": host, "teleport_port": port_value, "teleport_stream_key": stream_key})
+        elif mode in ("CaptureCard", "CaptureCardGStreamer"):
+            if hasattr(self, "capture_card_device_option") and self.capture_card_device_option.winfo_exists():
+                self._on_capture_card_device_selected(self.capture_card_device_option.get())
+            if hasattr(self, "capture_card_width_entry") and hasattr(self, "capture_card_height_entry"):
+                try:
+                    config.capture_width = int(self.capture_card_width_entry.get())
+                    config.capture_height = int(self.capture_card_height_entry.get())
+                except ValueError:
+                    pass
+            payload.update({
+                "device_index": int(getattr(config, "capture_device_index", 0)),
+                "device_name": str(getattr(config, "capture_device_name", "")),
+            })
+        elif mode == "MSS":
+            monitor_index = int(getattr(config, "mss_monitor_index", 1))
+            if hasattr(self, "mss_monitor_entry") and self.mss_monitor_entry.winfo_exists():
+                try:
+                    monitor_index = int(self.mss_monitor_entry.get())
+                    config.mss_monitor_index = monitor_index
+                except ValueError:
+                    pass
+            payload.update({
+                "mss_monitor_index": monitor_index,
+                "mss_fov_x": int(getattr(config, "mss_fov_x", 320)),
+                "mss_fov_y": int(getattr(config, "mss_fov_y", 320)),
+            })
+        return payload
+
+    def _connect_capture_backend_sync(self, payload):
+        mode = str((payload or {}).get("mode") or getattr(self.capture, "mode", "NDI"))
+        try:
+            if mode == "NDI":
+                selected = str(payload.get("ndi_source") or "").strip()
+                if not selected:
+                    return False, "No NDI source selected"
+                self.capture.ndi.set_selected_source(selected)
+                self.saved_ndi_source = selected
+                config.last_ndi_source = selected
+                return self.capture.connect_ndi(selected)
+            if mode == "UDP":
+                ip = str(payload.get("udp_ip") or getattr(config, "udp_ip", "127.0.0.1"))
+                port = str(payload.get("udp_port") or getattr(config, "udp_port", "1234"))
+                self.saved_udp_ip = ip
+                self.saved_udp_port = port
+                config.udp_ip = ip
+                config.udp_port = port
+                return self.capture.connect_udp(ip, port)
+            if mode == "Teleport":
+                host = str(payload.get("teleport_host") or "")
+                port_value = str(payload.get("teleport_port") or "0")
+                stream_key = str(payload.get("teleport_stream_key") or "")
+                self.saved_teleport_host = host
+                self.saved_teleport_port = port_value
+                self.saved_teleport_stream_key = stream_key
+                config.teleport_host = host
+                config.teleport_port = port_value
+                config.teleport_stream_key = stream_key
+                return self.capture.connect_teleport(host=host, port=port_value, stream_key=stream_key)
+            if mode in ("CaptureCard", "CaptureCardGStreamer"):
+                return self.capture.connect_capture_card(config)
+            if mode == "MSS":
+                return self.capture.connect_mss(
+                    int(payload.get("mss_monitor_index", getattr(config, "mss_monitor_index", 1))),
+                    int(payload.get("mss_fov_x", getattr(config, "mss_fov_x", 320))),
+                    int(payload.get("mss_fov_y", getattr(config, "mss_fov_y", 320))),
+                )
+            return False, f"Unknown capture mode {mode}"
+        except Exception as e:
+            return False, str(e)
+
     def _create_nav_btn(self, parent, text, command, icon=">"):
         return ctk.CTkButton(
             parent,
-            text=f"{icon}  {text}",
+            text=f"{icon}  {t(text)}",
             height=38,
             fg_color="#081425",
             text_color=COLOR_TEXT,
@@ -725,7 +1104,7 @@ class ViewerApp(ctk.CTk):
     def _create_nav_btn_legacy(self, parent, text, command):
         return ctk.CTkButton(
             parent,
-            text=text,
+            text=t(text),
             height=32,
             fg_color="transparent",
             text_color=COLOR_TEXT,
@@ -741,7 +1120,7 @@ class ViewerApp(ctk.CTk):
     def _add_sidebar_group_label(self, parent, text):
         ctk.CTkLabel(
             parent,
-            text=text.upper(),
+            text=heading(text),
             font=("Consolas", 11, "bold"),
             text_color=COLOR_TEXT_DIM,
             anchor="w",
@@ -806,10 +1185,10 @@ class ViewerApp(ctk.CTk):
     def _toggle_theme(self):
         if ctk.get_appearance_mode() == "Dark":
             ctk.set_appearance_mode("Light")
-            self.theme_btn.configure(text="Light Mode")
+            self.theme_btn.configure(text=t("Light Mode"))
         else:
             ctk.set_appearance_mode("Dark")
-            self.theme_btn.configure(text="Dark Mode")
+            self.theme_btn.configure(text=t("Dark Mode"))
 
     def _toggle_ui_style(self):
         self._legacy_ui_mode = not self._legacy_ui_mode
@@ -846,12 +1225,16 @@ class ViewerApp(ctk.CTk):
         if tab_fn is not None and tab_name != "General":
             self._handle_nav_click(tab_name, tab_fn)
 
+    def _apply_language(self):
+        self._rebuild_layout_for_ui_style()
+
     # --- 各分頁內容 Tabs ---
 
     def _show_general_tab(self):
         self._active_tab_name = "General"
         self._clear_content()
         self._add_title("General")
+        self._ignore_settings_events = True
 
         # -- HARDWARE API (collapsible) --
         sec_hardware = self._create_collapsible_section(self.content_frame, "Hardware API", initially_open=True)
@@ -995,7 +1378,7 @@ class ViewerApp(ctk.CTk):
         self.mouse_hardware_frame.pack(fill="x", pady=(2, 8))
         ctk.CTkLabel(
             self.mouse_hardware_frame,
-            text="Mouse Connection",
+            text=t("Mouse Connection"),
             font=("Roboto", 12, "bold"),
             text_color=COLOR_TEXT,
             anchor="w",
@@ -1009,7 +1392,7 @@ class ViewerApp(ctk.CTk):
         self.mouse_api_option.set(current_mouse_api)
         self._add_switch_in_frame(
             self.mouse_hardware_frame,
-            "Auto Connect Mouse API On Startup",
+            "Auto Start On Startup",
             self.var_auto_connect_mouse_api,
             self._on_auto_connect_mouse_api_changed,
         )
@@ -1026,7 +1409,7 @@ class ViewerApp(ctk.CTk):
         self.keyboard_hardware_frame.pack(fill="x", pady=(0, 4))
         ctk.CTkLabel(
             self.keyboard_hardware_frame,
-            text="Keyboard Connection",
+            text=t("Keyboard Connection"),
             font=("Roboto", 12, "bold"),
             text_color=COLOR_TEXT,
             anchor="w",
@@ -1034,7 +1417,7 @@ class ViewerApp(ctk.CTk):
         self.var_keyboard_api_enabled = tk.BooleanVar(value=self.saved_keyboard_api_enabled)
         self.keyboard_enable_checkbox = ctk.CTkCheckBox(
             self.keyboard_hardware_frame,
-            text="Enable Keyboard API",
+            text=t("Enable Keyboard API"),
             variable=self.var_keyboard_api_enabled,
             command=self._on_keyboard_api_enabled_changed,
             font=FONT_MAIN,
@@ -1066,8 +1449,23 @@ class ViewerApp(ctk.CTk):
 
         self._update_mouse_api_ui()
         self._update_keyboard_api_ui()
-        
-        self._add_capture_entry_card()
+
+        sec_capture = self._create_collapsible_section(self.content_frame, "Capture", initially_open=True)
+        self.capture_settings_frame = sec_capture
+        self.capture_method_var.set(self._capture_display_mode(self.capture.mode))
+        self.capture_method_option = self._add_option_row_in_frame(
+            sec_capture,
+            "Method",
+            ["NDI", "UDP", "Teleport", "Capture Card (OpenCV)", "Capture Card (GStreamer)", "MSS"],
+            self._on_capture_method_changed,
+        )
+        self.capture_method_option.set(self._capture_display_mode(self.capture.mode))
+        self._add_spacer_in_frame(sec_capture)
+        self.capture_content_frame = ctk.CTkFrame(sec_capture, fg_color="transparent")
+        self.capture_content_frame.pack(fill="x", pady=5)
+        self._update_capture_ui()
+        self._ignore_settings_events = False
+        self._apply_runtime_settings_lock()
 
         # -- SETTINGS (collapsible) --
         sec_settings = self._create_collapsible_section(self.content_frame, "Settings", initially_open=True)
@@ -1307,6 +1705,8 @@ class ViewerApp(ctk.CTk):
             mode = "MakxdMakAPI"
         elif mode_norm in ("makapi", "mak_api", "mak-api", "mak api"):
             mode = "MakAPI"
+        elif mode_norm in ("makv2binary", "makv2_binary", "makv2-binary", "binary"):
+            mode = "MakV2Binary"
         elif mode_norm in ("makv2", "mak_v2", "mak-v2"):
             mode = "MakV2"
         elif mode_norm in ("makcucontroller", "makcu_controller", "makcu-controller", "makcu controller"):
@@ -1368,9 +1768,8 @@ class ViewerApp(ctk.CTk):
 
             btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=5)
-            self._add_hardware_action_button(btn_frame, "CONNECT SERIAL", lambda: self._connect_mouse_api("Serial")).pack(side="left")
-            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
-            self._add_hardware_action_button(btn_frame, "SWITCH TO 4M", self._switch_serial_to_4m).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "SWITCH TO 4M", self._switch_serial_to_4m).pack(side="left", padx=12)
             return
 
         if mode == "Arduino":
@@ -1402,8 +1801,7 @@ class ViewerApp(ctk.CTk):
 
             btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_hardware_action_button(btn_frame, "CONNECT ARDUINO", lambda: self._connect_mouse_api("Arduino")).pack(side="left")
-            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left")
             return
 
         if mode == "SendInput":
@@ -1425,8 +1823,20 @@ class ViewerApp(ctk.CTk):
 
             btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_hardware_action_button(btn_frame, "ENABLE SENDINPUT", lambda: self._connect_mouse_api("SendInput")).pack(side="left")
-            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left")
+            return
+
+        if mode == "MakV2Binary":
+            tip = ctk.CTkLabel(
+                self.mouse_content_frame,
+                text="MakV2 Binary API",
+                font=("Roboto", 10),
+                text_color=COLOR_TEXT_DIM,
+            )
+            tip.pack(anchor="w", pady=(0, 8))
+            btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
+            btn_frame.pack(fill="x", pady=8)
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left")
             return
 
         if mode == "MakV2":
@@ -1458,8 +1868,7 @@ class ViewerApp(ctk.CTk):
 
             btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_hardware_action_button(btn_frame, "CONNECT MAKV2", lambda: self._connect_mouse_api("MakV2")).pack(side="left")
-            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left")
             return
 
         if mode == "MakcuController":
@@ -1499,10 +1908,7 @@ class ViewerApp(ctk.CTk):
 
             btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_hardware_action_button(
-                btn_frame, "CONNECT MAKCU CONTROLLER", lambda: self._connect_mouse_api("MakcuController")
-            ).pack(side="left")
-            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left")
             return
 
         if mode == "MakxdMakAPI":
@@ -1542,8 +1948,7 @@ class ViewerApp(ctk.CTk):
 
             btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_hardware_action_button(btn_frame, "CONNECT MAKXD_MAKAPI", lambda: self._connect_mouse_api("MakxdMakAPI")).pack(side="left")
-            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left")
             return
 
         if mode == "DHZ":
@@ -1584,8 +1989,7 @@ class ViewerApp(ctk.CTk):
 
             btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_hardware_action_button(btn_frame, "CONNECT DHZ", lambda: self._connect_mouse_api("DHZ")).pack(side="left")
-            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left")
             return
 
         if mode == "Ferrum":
@@ -1685,8 +2089,7 @@ class ViewerApp(ctk.CTk):
 
             btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_hardware_action_button(btn_frame, "CONNECT FERRUM", lambda: self._connect_mouse_api("Ferrum")).pack(side="left")
-            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left")
             return
 
         if mode == "Medius":
@@ -1717,9 +2120,8 @@ class ViewerApp(ctk.CTk):
 
             btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_hardware_action_button(btn_frame, "CONNECT MEDIUS", lambda: self._connect_mouse_api("Medius")).pack(side="left")
-            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
-            self._add_hardware_action_button(btn_frame, "REFRESH PORTS", self._refresh_medius_ports).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "REFRESH PORTS", self._refresh_medius_ports).pack(side="left", padx=12)
             return
 
         if mode == "MakAPI":
@@ -1759,9 +2161,8 @@ class ViewerApp(ctk.CTk):
 
             btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_hardware_action_button(btn_frame, "CONNECT MAK API", lambda: self._connect_mouse_api("MakAPI")).pack(side="left")
-            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
-            self._add_hardware_action_button(btn_frame, "REFRESH PORTS", self._refresh_mak_api_ports).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left")
+            self._add_hardware_action_button(btn_frame, "REFRESH PORTS", self._refresh_mak_api_ports).pack(side="left", padx=12)
             return
 
         if mode == "KmboxA":
@@ -1792,8 +2193,7 @@ class ViewerApp(ctk.CTk):
 
             btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=8)
-            self._add_hardware_action_button(btn_frame, "CONNECT KMBOXA", lambda: self._connect_mouse_api("KmboxA")).pack(side="left")
-            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+            self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left")
             return
 
         # Net API controls
@@ -1842,10 +2242,16 @@ class ViewerApp(ctk.CTk):
 
         btn_frame = ctk.CTkFrame(self.mouse_content_frame, fg_color="transparent")
         btn_frame.pack(fill="x", pady=8)
-        self._add_hardware_action_button(btn_frame, "CONNECT NET", lambda: self._connect_mouse_api("Net")).pack(side="left")
-        self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left", padx=12)
+        self._add_hardware_action_button(btn_frame, "TEST MOVE", self._test_mouse_move).pack(side="left")
+        self._apply_runtime_settings_lock()
 
     def _on_mouse_api_changed(self, val):
+        if getattr(self, "_ignore_settings_events", False):
+            return
+        if self._runtime_settings_locked():
+            self._restore_locked_mouse_api_option()
+            self._warn_runtime_settings_locked("hardware")
+            return
         mode_norm = str(val).strip().lower()
         if mode_norm == "net":
             self.saved_mouse_api = "Net"
@@ -1882,20 +2288,31 @@ class ViewerApp(ctk.CTk):
         )
         # Cancel any in-flight connect request to avoid stale success callback after mode switch.
         self._mouse_api_connect_job_id += 1
-        self._mouse_api_connecting = False
-        # Switching mode must drop current hardware connection state.
+        self._invalidate_runtime()
         try:
             from src.utils import mouse as mouse_backend
 
             mouse_backend.disconnect_all(selected_mode=self.saved_mouse_api)
         except Exception:
             pass
+        try:
+            self.capture.disconnect()
+        except Exception:
+            pass
         self._update_mouse_api_ui()
         self._update_keyboard_api_ui()
+        self._apply_runtime_settings_lock()
         self._set_status_indicator(f"Status: Mouse API {self.saved_mouse_api} selected", COLOR_TEXT_DIM)
         self._update_hardware_status_ui()
 
     def _on_keyboard_api_changed(self, val):
+        if getattr(self, "_ignore_settings_events", False):
+            return
+        if self._runtime_settings_locked():
+            self._restore_locked_keyboard_api_option()
+            self._warn_runtime_settings_locked("hardware")
+            self._apply_runtime_settings_lock()
+            return
         normalized = self._normalize_keyboard_api_name(val)
         self.saved_keyboard_api = normalized
         config.keyboard_api = normalized
@@ -1907,6 +2324,18 @@ class ViewerApp(ctk.CTk):
             self._show_tb_tab()
 
     def _on_keyboard_api_enabled_changed(self):
+        if getattr(self, "_ignore_settings_events", False):
+            return
+        if self._runtime_settings_locked():
+            self._ignore_settings_events = True
+            try:
+                self.var_keyboard_api_enabled.set(bool(getattr(config, "keyboard_api_enabled", False)))
+            except Exception:
+                pass
+            self._ignore_settings_events = False
+            self._warn_runtime_settings_locked("hardware")
+            self._apply_runtime_settings_lock()
+            return
         enabled = bool(self.var_keyboard_api_enabled.get())
         self.saved_keyboard_api_enabled = enabled
         config.keyboard_api_enabled = enabled
@@ -1942,6 +2371,7 @@ class ViewerApp(ctk.CTk):
                 wraplength=720,
                 anchor="w",
             ).pack(fill="x", pady=(0, 2))
+            self._apply_runtime_settings_lock()
             return
 
         selected_keyboard_api = self._normalize_keyboard_api_name(
@@ -2072,8 +2502,12 @@ class ViewerApp(ctk.CTk):
         btn_frame = ctk.CTkFrame(self.keyboard_content_frame, fg_color="transparent")
         btn_frame.pack(fill="x", pady=(0, 2))
         self._add_hardware_action_button(btn_frame, action_text, self._connect_keyboard_api).pack(side="left")
+        self._apply_runtime_settings_lock()
 
     def _connect_keyboard_api(self):
+        if self._runtime_settings_locked():
+            self._warn_runtime_settings_locked("hardware")
+            return
         if getattr(self, "_keyboard_api_connecting", False):
             self._set_status_indicator("Status: Keyboard API connecting...", COLOR_TEXT_DIM)
             return
@@ -2221,6 +2655,15 @@ class ViewerApp(ctk.CTk):
                 config.keyboard_ferrum_dhz_random = 0
 
     def _on_auto_connect_mouse_api_changed(self):
+        if self._runtime_settings_locked():
+            self._ignore_settings_events = True
+            try:
+                self.var_auto_connect_mouse_api.set(bool(getattr(config, "auto_connect_mouse_api", False)))
+            except Exception:
+                pass
+            self._ignore_settings_events = False
+            self._warn_runtime_settings_locked("hardware")
+            return
         val = bool(self.var_auto_connect_mouse_api.get())
         self.saved_auto_connect_mouse_api = val
         config.auto_connect_mouse_api = val
@@ -2230,6 +2673,15 @@ class ViewerApp(ctk.CTk):
             pass
 
     def _on_serial_auto_switch_4m_changed(self):
+        if self._runtime_settings_locked():
+            self._ignore_settings_events = True
+            try:
+                self.var_serial_auto_switch_4m.set(bool(getattr(config, "serial_auto_switch_4m", False)))
+            except Exception:
+                pass
+            self._ignore_settings_events = False
+            self._warn_runtime_settings_locked("hardware")
+            return
         val = bool(self.var_serial_auto_switch_4m.get())
         self.saved_serial_auto_switch_4m = val
         config.serial_auto_switch_4m = val
@@ -2239,6 +2691,9 @@ class ViewerApp(ctk.CTk):
             pass
 
     def _on_serial_mode_selected(self, val):
+        if self._runtime_settings_locked():
+            self._warn_runtime_settings_locked("hardware")
+            return
         mode_norm = str(val).strip().lower()
         self.saved_serial_port_mode = "Manual" if mode_norm == "manual" else "Auto"
         config.serial_port_mode = self.saved_serial_port_mode
@@ -2488,6 +2943,9 @@ class ViewerApp(ctk.CTk):
             self._set_status_indicator(f"Status: Mouse API test error: {e}", COLOR_DANGER)
 
     def _switch_serial_to_4m(self):
+        if self._runtime_settings_locked():
+            self._warn_runtime_settings_locked("hardware")
+            return
         if getattr(self, "_mouse_api_connecting", False):
             self._set_status_indicator("Status: HW connecting...", COLOR_TEXT_DIM)
             return
@@ -2523,11 +2981,11 @@ class ViewerApp(ctk.CTk):
             self._set_status_indicator(f"Status: Switch to 4M failed{suffix}", COLOR_DANGER)
         self._update_hardware_status_ui()
 
-    def _connect_mouse_api(self, target_mode=None):
-        if getattr(self, "_mouse_api_connecting", False):
+    def _connect_mouse_api(self, target_mode=None, start_async=True):
+        if start_async and getattr(self, "_mouse_api_connecting", False):
             self._set_status_indicator("Status: HW connecting...", COLOR_TEXT_DIM)
             return
-        if getattr(self, "_serial_baud_switching", False):
+        if start_async and getattr(self, "_serial_baud_switching", False):
             self._set_status_indicator("Status: Serial baud switching...", COLOR_TEXT_DIM)
             return
 
@@ -2543,6 +3001,8 @@ class ViewerApp(ctk.CTk):
             mode = "MakxdMakAPI"
         elif mode_norm in ("makapi", "mak_api", "mak-api", "mak api"):
             mode = "MakAPI"
+        elif mode_norm in ("makv2binary", "makv2_binary", "makv2-binary", "binary"):
+            mode = "MakV2Binary"
         elif mode_norm in ("makv2", "mak_v2", "mak-v2"):
             mode = "MakV2"
         elif mode_norm in ("makcucontroller", "makcu_controller", "makcu-controller", "makcu controller"):
@@ -2756,6 +3216,9 @@ class ViewerApp(ctk.CTk):
                 "mak_api_baud": config.mak_api_baud,
             })
 
+        if not start_async:
+            return payload
+
         self._mouse_api_connecting = True
         self._mouse_api_connect_job_id += 1
         job_id = self._mouse_api_connect_job_id
@@ -2772,6 +3235,11 @@ class ViewerApp(ctk.CTk):
         )
 
     def _connect_mouse_api_worker(self, job_id, payload):
+        mode = payload.get("mode", "Serial")
+        success, error = self._execute_mouse_api_connect(payload)
+        self.after(0, lambda: self._on_mouse_api_connect_done(job_id, mode, payload, success, error))
+
+    def _execute_mouse_api_connect(self, payload):
         mode = payload.get("mode", "Serial")
         success, error = False, "unknown error"
         try:
@@ -2803,6 +3271,8 @@ class ViewerApp(ctk.CTk):
                     makv2_port=payload.get("makv2_port", ""),
                     makv2_baud=payload.get("makv2_baud", 4000000),
                 )
+            elif mode == "MakV2Binary":
+                success, error = switch_backend("MakV2Binary")
             elif mode == "MakcuController":
                 success, error = switch_backend(
                     "MakcuController",
@@ -2845,12 +3315,6 @@ class ViewerApp(ctk.CTk):
                     mak_api_port=payload.get("mak_api_port", ""),
                     mak_api_baud=payload.get("mak_api_baud", 0),
                 )
-            elif False and mode == "Ferrum":
-                success, error = switch_backend(
-                    "Ferrum",
-                    ferrum_device_path=payload.get("ferrum_device_path", ""),
-                    ferrum_connection_type="serial",  # Ferrum 只支持串口
-                )
             else:
                 success, error = switch_backend(
                     "Serial",
@@ -2859,8 +3323,7 @@ class ViewerApp(ctk.CTk):
                 )
         except Exception as e:
             success, error = False, str(e)
-
-        self.after(0, lambda: self._on_mouse_api_connect_done(job_id, mode, payload, success, error))
+        return success, error
 
     def _on_mouse_api_connect_done(self, job_id, mode, payload, success, error):
         # Ignore stale callback results.
@@ -2912,15 +3375,14 @@ class ViewerApp(ctk.CTk):
     def _update_capture_ui(self):
         """根據選擇的採集方法更新 UI"""
         if not hasattr(self, "capture_content_frame"):
-            self._refresh_capture_entry_card()
             return
         try:
             if not self.capture_content_frame.winfo_exists():
-                self._refresh_capture_entry_card()
                 return
         except Exception:
-            self._refresh_capture_entry_card()
             return
+        prev_ignore = getattr(self, "_ignore_settings_events", False)
+        self._ignore_settings_events = True
         # 淇濆瓨鐣跺墠 UDP 杓稿叆妗嗙殑鍊硷紙濡傛灉瀛樺湪锛?
         if hasattr(self, 'udp_ip_entry') and self.udp_ip_entry.winfo_exists():
             self.saved_udp_ip = self.udp_ip_entry.get()
@@ -2981,7 +3443,6 @@ class ViewerApp(ctk.CTk):
             btn_frame = ctk.CTkFrame(self.capture_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=10)
             self._add_text_button(btn_frame, "REFRESH", self._refresh_sources).pack(side="left")
-            self._add_text_button(btn_frame, "CONNECT", self._connect_to_selected).pack(side="left", padx=15)
             
             # NDI FOV 瑁佸垏瑷畾
             self._add_spacer_in_frame(self.capture_content_frame)
@@ -3069,10 +3530,6 @@ class ViewerApp(ctk.CTk):
             # 缍佸畾浜嬩欢浠ュ鏅備繚瀛?
             self.udp_port_entry.bind("<KeyRelease>", self._on_udp_port_changed)
             self.udp_port_entry.bind("<FocusOut>", self._on_udp_port_changed)
-            
-            btn_frame = ctk.CTkFrame(self.capture_content_frame, fg_color="transparent")
-            btn_frame.pack(fill="x", pady=10)
-            self._add_text_button(btn_frame, "CONNECT", self._connect_udp).pack(side="left")
             
             # UDP FOV 瑁佸垏瑷畾
             self._add_spacer_in_frame(self.capture_content_frame)
@@ -3189,13 +3646,45 @@ class ViewerApp(ctk.CTk):
             btn_frame = ctk.CTkFrame(self.capture_content_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=10)
             self._add_text_button(btn_frame, "REFRESH", self._refresh_teleport_streams).pack(side="left")
-            self._add_text_button(btn_frame, "CONNECT", self._connect_teleport).pack(side="left", padx=15)
             
         elif method in ["CaptureCard", "CaptureCardGStreamer"]:
             # CaptureCard Controls (shared UI for both OpenCV and GStreamer)
             self._add_subtitle_in_frame(self.capture_content_frame, "CAPTURE CARD SETTINGS")
-            
-            capture_devices = self._scan_capture_card_devices()
+
+            if self._runtime_settings_locked():
+                capture_devices = list(getattr(self, "_cached_capture_card_devices", []) or [])
+                if not capture_devices:
+                    idx = int(getattr(config, "capture_device_index", 0))
+                    name = str(getattr(config, "capture_device_name", "")).strip()
+                    label = name or f"Device {idx}"
+                    capture_devices = [{"label": label, "index": idx, "name": name}]
+                    self._capture_card_display_to_index = {label: idx}
+                    self._capture_card_display_to_name = {label: name}
+            else:
+                capture_devices = self._scan_capture_card_devices()
+                self._cached_capture_card_devices = list(capture_devices)
+
+            if method == "CaptureCard":
+                backend_frame = ctk.CTkFrame(self.capture_content_frame, fg_color="transparent")
+                backend_frame.pack(fill="x", pady=5)
+                ctk.CTkLabel(backend_frame, text="OpenCV Backend", font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+                self.capture_opencv_backend_option = self._add_option_menu(
+                    ["DirectShow", "UVC"],
+                    self._on_capture_opencv_backend_selected,
+                    parent=backend_frame,
+                )
+                self.capture_opencv_backend_option.pack(side="right")
+                current_backend = str(getattr(config, "capture_opencv_backend", "dshow")).strip().lower()
+                self.capture_opencv_backend_option.set("UVC" if current_backend in ("uvc", "msmf") else "DirectShow")
+                ctk.CTkLabel(
+                    self.capture_content_frame,
+                    text="DirectShow = CAP_DSHOW. UVC = Windows Media Foundation (CAP_MSMF), typical for USB Video Class cards.",
+                    font=("Roboto", 9),
+                    text_color=COLOR_TEXT_DIM,
+                    anchor="w",
+                    justify="left",
+                    wraplength=720,
+                ).pack(fill="x", pady=(0, 6))
 
             # Device Selection
             device_frame = ctk.CTkFrame(self.capture_content_frame, fg_color="transparent")
@@ -3331,10 +3820,6 @@ class ViewerApp(ctk.CTk):
             self.capture_card_center_label.pack(side="left")
             # 鏇存柊涓績榛為’绀?
             self._update_capture_card_center_display()
-            
-            btn_frame = ctk.CTkFrame(self.capture_content_frame, fg_color="transparent")
-            btn_frame.pack(fill="x", pady=10)
-            self._add_text_button(btn_frame, "CONNECT", self._connect_capture_card).pack(side="left")
         
         elif method == "MSS":
             # MSS Screen Capture Controls
@@ -3445,13 +3930,13 @@ class ViewerApp(ctk.CTk):
                 font=("Roboto", 9), text_color=COLOR_TEXT_DIM
             )
             self.mss_capture_info_label.pack(anchor="w", pady=(0, 5))
-            
-            btn_frame = ctk.CTkFrame(self.capture_content_frame, fg_color="transparent")
-            btn_frame.pack(fill="x", pady=10)
-            self._add_text_button(btn_frame, "CONNECT", self._connect_mss).pack(side="left")
+        self._ignore_settings_events = prev_ignore
+        self._apply_runtime_settings_lock()
 
     def _on_udp_ip_changed(self, event=None):
         """瀵︽檪淇濆瓨 UDP IP"""
+        if self._runtime_settings_locked():
+            return
         if hasattr(self, 'udp_ip_entry') and self.udp_ip_entry.winfo_exists():
             val = self.udp_ip_entry.get()
             self.saved_udp_ip = val
@@ -3459,6 +3944,8 @@ class ViewerApp(ctk.CTk):
 
     def _on_udp_port_changed(self, event=None):
         """瀵︽檪淇濆瓨 UDP Port"""
+        if self._runtime_settings_locked():
+            return
         if hasattr(self, 'udp_port_entry') and self.udp_port_entry.winfo_exists():
             val = self.udp_port_entry.get()
             self.saved_udp_port = val
@@ -3518,12 +4005,16 @@ class ViewerApp(ctk.CTk):
 
     def _on_teleport_stream_selected(self, val):
         """Handle Teleport discovered stream selection."""
+        if self._runtime_settings_locked():
+            return
         stream_key = str(self._teleport_stream_display_to_key.get(str(val), "")).strip()
         self.saved_teleport_stream_key = stream_key
         config.teleport_stream_key = stream_key
 
     def _on_teleport_host_changed(self, event=None):
         """Handle Teleport host input update."""
+        if self._runtime_settings_locked():
+            return
         if hasattr(self, "teleport_host_entry") and self.teleport_host_entry.winfo_exists():
             host = self.teleport_host_entry.get().strip()
             self.saved_teleport_host = host
@@ -3531,6 +4022,8 @@ class ViewerApp(ctk.CTk):
 
     def _on_teleport_port_changed(self, event=None):
         """Handle Teleport port input update."""
+        if self._runtime_settings_locked():
+            return
         if hasattr(self, "teleport_port_entry") and self.teleport_port_entry.winfo_exists():
             port_text = self.teleport_port_entry.get().strip()
             self.saved_teleport_port = port_text
@@ -3582,6 +4075,8 @@ class ViewerApp(ctk.CTk):
     
     def _on_capture_card_device_changed(self, event=None):
         """瀵︽檪淇濆瓨 CaptureCard Device Index"""
+        if self._runtime_settings_locked():
+            return
         if hasattr(self, 'capture_card_device_entry') and self.capture_card_device_entry.winfo_exists():
             try:
                 val = int(self.capture_card_device_entry.get())
@@ -3590,9 +4085,10 @@ class ViewerApp(ctk.CTk):
                 pass
 
     def _scan_capture_card_devices(self):
-        """Scan capture devices for OpenCV DShow / 自動掃描 capture devices."""
+        """Scan capture devices for OpenCV DirectShow / UVC."""
         devices = []
         self._capture_card_display_to_index = {}
+        self._capture_card_display_to_name = {}
         try:
             from src.capture.CaptureCard import enumerate_capture_card_devices
 
@@ -3601,33 +4097,97 @@ class ViewerApp(ctk.CTk):
             log_print(f"[UI] Capture card device scan failed: {e}")
 
         for item in devices:
-            self._capture_card_display_to_index[str(item["label"])] = int(item["index"])
+            label = str(item["label"])
+            self._capture_card_display_to_index[label] = int(item["index"])
+            self._capture_card_display_to_name[label] = str(item.get("name", "")).strip()
         return devices
 
     def _get_capture_card_selected_label(self, devices):
         current_index = int(getattr(config, "capture_device_index", 0))
+        current_name = str(getattr(config, "capture_device_name", "")).strip().lower()
+        if current_name:
+            for item in devices:
+                if str(item.get("name", "")).strip().lower() == current_name:
+                    return str(item["label"])
         for item in devices:
             if int(item["index"]) == current_index:
                 return str(item["label"])
         if devices:
+            if self._runtime_settings_locked():
+                return str(devices[0]["label"])
             first = devices[0]
             try:
                 config.capture_device_index = int(first["index"])
+                config.capture_device_name = str(first.get("name", "")).strip()
             except Exception:
                 pass
             return str(first["label"])
         return "No devices detected"
 
+    def _restore_locked_capture_card_device_option(self):
+        if not hasattr(self, "capture_card_device_option"):
+            return
+        try:
+            if not self.capture_card_device_option.winfo_exists():
+                return
+        except Exception:
+            return
+        devices = list(getattr(self, "_cached_capture_card_devices", []) or [])
+        self._ignore_settings_events = True
+        try:
+            self.capture_card_device_option.set(self._get_capture_card_selected_label(devices))
+        except Exception:
+            pass
+        self._ignore_settings_events = False
+
+    def _restore_locked_capture_opencv_backend_option(self):
+        if not hasattr(self, "capture_opencv_backend_option"):
+            return
+        try:
+            if not self.capture_opencv_backend_option.winfo_exists():
+                return
+        except Exception:
+            return
+        current_backend = str(getattr(config, "capture_opencv_backend", "dshow")).strip().lower()
+        self._ignore_settings_events = True
+        try:
+            self.capture_opencv_backend_option.set("UVC" if current_backend in ("uvc", "msmf") else "DirectShow")
+        except Exception:
+            pass
+        self._ignore_settings_events = False
+
     def _on_capture_card_device_selected(self, selected_label):
+        if getattr(self, "_ignore_settings_events", False):
+            return
+        if self._runtime_settings_locked():
+            self._restore_locked_capture_card_device_option()
+            self._warn_runtime_settings_locked("capture")
+            return
         try:
             if str(selected_label) not in self._capture_card_display_to_index:
                 return
             config.capture_device_index = int(self._capture_card_display_to_index[str(selected_label)])
+            config.capture_device_name = str(self._capture_card_display_to_name.get(str(selected_label), "")).strip()
         except Exception:
             pass
 
+    def _on_capture_opencv_backend_selected(self, selected_backend):
+        if getattr(self, "_ignore_settings_events", False):
+            return
+        if self._runtime_settings_locked():
+            self._restore_locked_capture_opencv_backend_option()
+            self._warn_runtime_settings_locked("capture")
+            return
+        value = str(selected_backend or "").strip().lower()
+        config.capture_opencv_backend = "uvc" if value == "uvc" else "dshow"
+        self._refresh_capture_entry_card()
+
     def _refresh_capture_card_devices(self):
+        if self._runtime_settings_locked():
+            self._warn_runtime_settings_locked("capture")
+            return
         devices = self._scan_capture_card_devices()
+        self._cached_capture_card_devices = list(devices)
         values = [item["label"] for item in devices] if devices else ["No devices detected"]
         if hasattr(self, "capture_card_device_option") and self.capture_card_device_option.winfo_exists():
             self.capture_card_device_option.configure(values=values)
@@ -3673,6 +4233,9 @@ class ViewerApp(ctk.CTk):
             ctk.CTkLabel(row, text=fmt, font=("Roboto", 9), text_color=COLOR_TEXT, width=120, anchor="w").pack(side="left", padx=4)
 
     def _probe_capture_card_device(self):
+        if self._runtime_settings_locked():
+            self._warn_runtime_settings_locked("capture")
+            return
         self._set_status_indicator("Status: Probing capture card...", COLOR_TEXT_DIM)
         if hasattr(self, "capture_card_probe_info_label") and self.capture_card_probe_info_label.winfo_exists():
             self.capture_card_probe_info_label.configure(text="Probing selected device...")
@@ -3686,6 +4249,8 @@ class ViewerApp(ctk.CTk):
                 result = probe_capture_card_device(
                     device_index=device_index,
                     fourcc_values=["MJPG", "NV12", "YUY2", "YUYV", "BGR3"],
+                    backend=getattr(config, "capture_opencv_backend", "dshow"),
+                    device_name=str(getattr(config, "capture_device_name", "")),
                 )
                 error = None
             except Exception as e:
@@ -3720,6 +4285,9 @@ class ViewerApp(ctk.CTk):
             self.capture_card_probe_result_label.configure(text=probe_text)
 
     def _on_capture_card_format_selected(self, selected_format):
+        if self._runtime_settings_locked():
+            self._warn_runtime_settings_locked("capture")
+            return
         fmt = str(selected_format or "").strip().upper()
         if not fmt:
             return
@@ -3735,6 +4303,8 @@ class ViewerApp(ctk.CTk):
     
     def _on_capture_card_resolution_changed(self, event=None):
         """瀵︽檪淇濆瓨 CaptureCard Resolution"""
+        if self._runtime_settings_locked():
+            return
         if hasattr(self, 'capture_card_width_entry') and hasattr(self, 'capture_card_height_entry'):
             if self.capture_card_width_entry.winfo_exists() and self.capture_card_height_entry.winfo_exists():
                 try:
@@ -3747,6 +4317,8 @@ class ViewerApp(ctk.CTk):
     
     def _on_fps_limit_changed(self, event=None):
         """Handle FPS limit change"""
+        if self._runtime_settings_locked():
+            return
         try:
             if not hasattr(self, 'fps_limit_entry'):
                 return
@@ -3768,6 +4340,8 @@ class ViewerApp(ctk.CTk):
     
     def _on_capture_card_range_keyrelease(self, event=None):
         """鍦ㄨ几鍏ラ亷绋嬩腑鏇存柊涓績榛為’绀猴紙涓嶅挤鍒朵慨鏀硅几鍏ユ锛?"""
+        if self._runtime_settings_locked():
+            return
         if hasattr(self, 'capture_card_range_x_entry') and hasattr(self, 'capture_card_range_y_entry'):
             if self.capture_card_range_x_entry.winfo_exists() and self.capture_card_range_y_entry.winfo_exists():
                 try:
@@ -3791,6 +4365,8 @@ class ViewerApp(ctk.CTk):
     
     def _on_capture_card_range_focusout(self, event=None):
         """澶卞幓鐒﹂粸鏅傞璀変甫淇 CaptureCard Range"""
+        if self._runtime_settings_locked():
+            return
         if hasattr(self, 'capture_card_range_x_entry') and hasattr(self, 'capture_card_range_y_entry'):
             if self.capture_card_range_x_entry.winfo_exists() and self.capture_card_range_y_entry.winfo_exists():
                 try:
@@ -5076,13 +5652,13 @@ class ViewerApp(ctk.CTk):
     # --- 妤电啊绲勪欢妲嬪缓鍣?---
 
     def _add_title(self, text):
-        ctk.CTkLabel(self.content_frame, text=text, font=FONT_TITLE, text_color=COLOR_TEXT).pack(anchor="w", pady=(0, 20))
+        ctk.CTkLabel(self.content_frame, text=t(text), font=FONT_TITLE, text_color=COLOR_TEXT).pack(anchor="w", pady=(0, 20))
 
     def _add_subtitle(self, text):
-        ctk.CTkLabel(self.content_frame, text=text.upper(), font=("Roboto", 10, "bold"), text_color=COLOR_TEXT_DIM).pack(anchor="w", pady=(10, 5))
+        ctk.CTkLabel(self.content_frame, text=heading(text), font=("Roboto", 10, "bold"), text_color=COLOR_TEXT_DIM).pack(anchor="w", pady=(10, 5))
 
     def _add_subtitle_in_frame(self, parent, text):
-        ctk.CTkLabel(parent, text=text.upper(), font=("Roboto", 10, "bold"), text_color=COLOR_TEXT_DIM).pack(anchor="w", pady=(10, 5))
+        ctk.CTkLabel(parent, text=heading(text), font=("Roboto", 10, "bold"), text_color=COLOR_TEXT_DIM).pack(anchor="w", pady=(10, 5))
     
     def _add_spacer_in_frame(self, parent):
         """鍦ㄦ寚瀹?frame 涓坊鍔犻枔璺?"""
@@ -5118,7 +5694,7 @@ class ViewerApp(ctk.CTk):
             
             tooltip_label = ctk.CTkLabel(
                 tooltip_frame,
-                text=text,
+                text=t(text),
                 font=("Roboto", 12.5),
                 text_color=COLOR_TEXT,
                 justify="left",
@@ -5197,7 +5773,7 @@ class ViewerApp(ctk.CTk):
         arrow_label.pack(side="left", padx=(8, 0))
         
         title_label = ctk.CTkLabel(
-            header, text=title.upper(), font=("Consolas", 10, "bold"), text_color=COLOR_TEXT
+            header, text=heading(title), font=("Consolas", 10, "bold"), text_color=COLOR_TEXT
         )
         title_label.pack(side="left", padx=(4, 0))
         
@@ -5242,7 +5818,7 @@ class ViewerApp(ctk.CTk):
         
         header = ctk.CTkFrame(frame, fg_color="transparent")
         header.pack(fill="x")
-        ctk.CTkLabel(header, text=text, font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+        ctk.CTkLabel(header, text=t(text), font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
         
         val_str = f"{init_val:.2f}" if is_float else f"{int(init_val)}"
         val_entry = ctk.CTkEntry(
@@ -5274,7 +5850,7 @@ class ViewerApp(ctk.CTk):
         frame.pack(fill="x", pady=5)
         frame.grid_columnconfigure(0, weight=1)
         frame.grid_columnconfigure(1, weight=0)
-        ctk.CTkLabel(frame, text=label_text, font=FONT_MAIN, text_color=COLOR_TEXT).grid(row=0, column=0, sticky="w", padx=(0, 10))
+        ctk.CTkLabel(frame, text=t(label_text), font=FONT_MAIN, text_color=COLOR_TEXT).grid(row=0, column=0, sticky="w", padx=(0, 10))
         menu = self._add_option_menu(values, command, parent=frame)
         menu.grid(row=0, column=1, sticky="e")
         return menu
@@ -5285,7 +5861,7 @@ class ViewerApp(ctk.CTk):
         frame.pack(fill="x", pady=5)
         frame.grid_columnconfigure(0, weight=1)
         frame.grid_columnconfigure(1, weight=0)
-        ctk.CTkLabel(frame, text=label_text, font=FONT_MAIN, text_color=COLOR_TEXT).grid(
+        ctk.CTkLabel(frame, text=t(label_text), font=FONT_MAIN, text_color=COLOR_TEXT).grid(
             row=0, column=0, sticky="w", padx=(0, 10)
         )
         menu = self._add_hardware_option_menu(values, command, parent=frame)
@@ -5297,12 +5873,12 @@ class ViewerApp(ctk.CTk):
         frame.pack(fill="x", pady=5)
         frame.grid_columnconfigure(0, weight=1)
         frame.grid_columnconfigure(1, weight=0)
-        ctk.CTkLabel(frame, text=label_text, font=FONT_MAIN, text_color=COLOR_TEXT).grid(
+        ctk.CTkLabel(frame, text=t(label_text), font=FONT_MAIN, text_color=COLOR_TEXT).grid(
             row=0, column=0, sticky="w", padx=(0, 10)
         )
         button = ctk.CTkButton(
             frame,
-            text=str(button_text),
+            text=t(str(button_text)),
             command=command,
             font=FONT_MAIN,
             text_color=COLOR_TEXT,
@@ -5320,7 +5896,7 @@ class ViewerApp(ctk.CTk):
     def _add_switch_in_frame(self, parent, text, variable, command):
         """鍦ㄦ寚瀹?parent frame 涓坊鍔?Switch"""
         switch = ctk.CTkSwitch(
-            parent, text=text, variable=variable, command=command,
+            parent, text=t(text), variable=variable, command=command,
             progress_color=COLOR_ACCENT, fg_color=COLOR_SURFACE,
             button_color=COLOR_ACCENT, button_hover_color=COLOR_ACCENT_HOVER,
             font=FONT_MAIN, text_color=COLOR_TEXT
@@ -5334,7 +5910,7 @@ class ViewerApp(ctk.CTk):
     def _add_switch(self, text, variable, command):
         switch = ctk.CTkSwitch(
             self.content_frame, 
-            text=text, 
+            text=t(text), 
             variable=variable, 
             command=command,
             progress_color=COLOR_ACCENT,
@@ -5354,7 +5930,7 @@ class ViewerApp(ctk.CTk):
         # 妯欑堡鑸囪几鍏ユ鍚屽湪涓€琛?
         header = ctk.CTkFrame(frame, fg_color="transparent")
         header.pack(fill="x")
-        ctk.CTkLabel(header, text=text, font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+        ctk.CTkLabel(header, text=t(text), font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
         
         # 鍙法杓殑杓稿叆妗嗭紙鏇挎彌鍘熸湰鐨?Label锛?
         val_str = f"{init_val:.2f}" if is_float else f"{int(init_val)}"
@@ -5439,7 +6015,7 @@ class ViewerApp(ctk.CTk):
 
         header = ctk.CTkFrame(frame, fg_color="transparent")
         header.pack(fill="x")
-        ctk.CTkLabel(header, text=text, font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
+        ctk.CTkLabel(header, text=t(text), font=FONT_MAIN, text_color=COLOR_TEXT).pack(side="left")
 
         max_str = f"{init_max:.2f}" if is_float else f"{int(init_max)}"
         max_entry = ctk.CTkEntry(
@@ -5697,7 +6273,7 @@ class ViewerApp(ctk.CTk):
         frame.grid_columnconfigure(1, weight=0)
         
         # Label
-        ctk.CTkLabel(frame, text=label_text, font=FONT_MAIN, text_color=COLOR_TEXT).grid(row=0, column=0, sticky="w", padx=(0, 10))
+        ctk.CTkLabel(frame, text=t(label_text), font=FONT_MAIN, text_color=COLOR_TEXT).grid(row=0, column=0, sticky="w", padx=(0, 10))
         
         # OptionMenu (Parent is row frame)
         menu = self._add_option_menu(values, command, parent=frame)
@@ -5707,7 +6283,7 @@ class ViewerApp(ctk.CTk):
     def _add_text_button(self, parent, text, command):
         return ctk.CTkButton(
             parent,
-            text=text,
+            text=t(text),
             font=("Consolas", 10, "bold"),
             text_color=COLOR_TEXT,
             fg_color=COLOR_SURFACE,
@@ -5723,7 +6299,7 @@ class ViewerApp(ctk.CTk):
         """Hardware API action button / 給 Hardware API 使用的 accent button"""
         return ctk.CTkButton(
             parent,
-            text=text,
+            text=t(text),
             font=("Consolas", 10, "bold"),
             text_color=COLOR_HARDWARE_BUTTON_TEXT,
             fg_color=COLOR_HARDWARE_BUTTON_BG,
@@ -7541,108 +8117,30 @@ class ViewerApp(ctk.CTk):
             connected = bool(self.capture.is_connected())
         except Exception:
             connected = False
-        state = "Connected" if connected else "Disconnected"
+        state = t("Connected") if connected else t("Disconnected")
         extra = ""
         internal = str(getattr(self.capture, "mode", ""))
         if internal in ("CaptureCard", "CaptureCardGStreamer"):
-            extra = f"  ·  Device {int(getattr(config, 'capture_device_index', 0))}  {int(getattr(config, 'capture_width', 1920))}x{int(getattr(config, 'capture_height', 1080))}"
+            backend = ""
+            if internal == "CaptureCard":
+                backend_name = str(getattr(config, "capture_opencv_backend", "dshow")).strip().lower()
+                backend = "  UVC" if backend_name in ("uvc", "msmf") else "  DirectShow"
+            extra = (
+                f"  ·{backend}  Device {int(getattr(config, 'capture_device_index', 0))}  "
+                f"{int(getattr(config, 'capture_width', 1920))}x{int(getattr(config, 'capture_height', 1080))}"
+            )
         return f"{mode}  ·  {state}{extra}"
 
     def _refresh_capture_entry_card(self):
-        if hasattr(self, "capture_entry_summary") and self.capture_entry_summary.winfo_exists():
-            self.capture_entry_summary.configure(text=self._capture_summary_text())
-        panel = getattr(self, "_capture_panel_window", None)
-        if panel is not None:
-            try:
-                if panel.winfo_exists():
-                    panel.refresh_status()
-            except Exception:
-                pass
+        self._apply_runtime_settings_lock()
 
-    def _add_capture_entry_card(self):
-        card = ctk.CTkFrame(
-            self.content_frame,
-            fg_color=COLOR_HARDWARE_PANEL,
-            corner_radius=12,
-            border_width=1,
-            border_color=COLOR_HARDWARE_PANEL_BORDER,
-            cursor="hand2",
-        )
-        card.pack(fill="x", pady=(8, 12))
-        header = ctk.CTkFrame(card, fg_color="transparent", cursor="hand2")
-        header.pack(fill="x", padx=14, pady=(12, 4))
-        ctk.CTkLabel(
-            header,
-            text="CAPTURE",
-            font=("Consolas", 12, "bold"),
-            text_color=COLOR_TEXT,
-            cursor="hand2",
-        ).pack(side="left")
-        ctk.CTkLabel(
-            header,
-            text="Open panel  ▶",
-            font=("Consolas", 10),
-            text_color=COLOR_ACCENT,
-            cursor="hand2",
-        ).pack(side="right")
-        self.capture_entry_summary = ctk.CTkLabel(
-            card,
-            text=self._capture_summary_text(),
-            font=("Roboto", 11),
-            text_color=COLOR_TEXT_DIM,
-            anchor="w",
-            cursor="hand2",
-        )
-        self.capture_entry_summary.pack(fill="x", padx=14, pady=(0, 14))
-        hint = ctk.CTkLabel(
-            card,
-            text="Click to open an independent capture panel. Switching capture card no longer rebuilds this tab.",
-            font=("Roboto", 9),
-            text_color=COLOR_TEXT_DIM,
-            anchor="w",
-            cursor="hand2",
-        )
-        hint.pack(fill="x", padx=14, pady=(0, 12))
-
-        for widget in (card, header, self.capture_entry_summary, hint):
-            widget.bind("<Button-1>", lambda _event: self._open_capture_panel())
-
-    def _open_capture_panel(self):
-        existing = getattr(self, "_capture_panel_window", None)
-        if existing is not None:
-            try:
-                if existing.winfo_exists():
-                    existing.lift()
-                    existing.focus_force()
-                    return
-            except Exception:
-                pass
-
-        def _on_close():
-            self._capture_panel_window = None
-            self.capture_content_frame = None
-            self.capture_method_option = None
-            self._refresh_capture_entry_card()
-
-        panel = CapturePanelWindow(self, on_close=_on_close)
-        self._capture_panel_window = panel
-        self._build_capture_panel_body(panel.body)
-        self._update_capture_ui()
-
-    def _build_capture_panel_body(self, parent):
-        self.capture_method_var.set(self._capture_display_mode(self.capture.mode))
-        self.capture_method_option = self._add_option_row_in_frame(
-            parent,
-            "Method",
-            ["NDI", "UDP", "Teleport", "Capture Card (OpenCV)", "Capture Card (GStreamer)", "MSS"],
-            self._on_capture_method_changed,
-        )
-        self.capture_method_option.set(self._capture_display_mode(self.capture.mode))
-        self._add_spacer_in_frame(parent)
-        self.capture_content_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        self.capture_content_frame.pack(fill="x", pady=5)
-    
     def _on_capture_method_changed(self, val):
+        if getattr(self, "_ignore_settings_events", False):
+            return
+        if self._runtime_settings_locked():
+            self._restore_locked_capture_method_option()
+            self._warn_runtime_settings_locked("capture")
+            return
         self.capture_method_var.set(val)
         internal_mode = self._capture_internal_mode(val)
         previous_mode = str(getattr(self.capture, "mode", ""))
@@ -7860,6 +8358,8 @@ class ViewerApp(ctk.CTk):
     
     def _on_mss_fov_x_slider_changed(self, val):
         """MSS FOV X 婊戞鏀硅畩"""
+        if self._runtime_settings_locked():
+            return
         int_val = int(round(val))
         config.mss_fov_x = int_val
         if hasattr(self, 'mss_fov_x_entry') and self.mss_fov_x_entry.winfo_exists():
@@ -7873,6 +8373,8 @@ class ViewerApp(ctk.CTk):
     
     def _on_mss_fov_x_entry_changed(self, event=None):
         """MSS FOV X 杓稿叆妗嗘敼璁?"""
+        if self._runtime_settings_locked():
+            return
         if hasattr(self, 'mss_fov_x_entry') and self.mss_fov_x_entry.winfo_exists():
             try:
                 val = int(self.mss_fov_x_entry.get())
@@ -7888,7 +8390,9 @@ class ViewerApp(ctk.CTk):
                 pass
     
     def _on_mss_fov_y_slider_changed(self, val):
-        """MSS FOV Y 婊戞鏀硅畩"""
+        """MSS FOV Y slider"""
+        if self._runtime_settings_locked():
+            return
         int_val = int(round(val))
         config.mss_fov_y = int_val
         if hasattr(self, 'mss_fov_y_entry') and self.mss_fov_y_entry.winfo_exists():
@@ -7900,7 +8404,9 @@ class ViewerApp(ctk.CTk):
             self.capture.mss_capture.set_fov(fov_x, int_val)
     
     def _on_mss_fov_y_entry_changed(self, event=None):
-        """MSS FOV Y 杓稿叆妗嗘敼璁?"""
+        """MSS FOV Y entry"""
+        if self._runtime_settings_locked():
+            return
         if hasattr(self, 'mss_fov_y_entry') and self.mss_fov_y_entry.winfo_exists():
             try:
                 val = int(self.mss_fov_y_entry.get())
@@ -7950,12 +8456,16 @@ class ViewerApp(ctk.CTk):
     
     # --- NDI FOV Callbacks ---
     def _on_ndi_fov_enabled_changed(self):
-        """NDI FOV 鍟熺敤鐙€鎱嬫敼璁?"""
+        """NDI FOV enable"""
+        if self._runtime_settings_locked():
+            return
         if hasattr(self, 'var_ndi_fov_enabled'):
             config.ndi_fov_enabled = self.var_ndi_fov_enabled.get()
     
     def _on_ndi_fov_slider_changed(self, val):
-        """NDI FOV 婊戞鏀硅畩"""
+        """NDI FOV slider"""
+        if self._runtime_settings_locked():
+            return
         int_val = int(round(val))
         config.ndi_fov = int_val
         if hasattr(self, 'ndi_fov_entry') and self.ndi_fov_entry.winfo_exists():
@@ -7964,7 +8474,9 @@ class ViewerApp(ctk.CTk):
         self._update_ndi_fov_info()
     
     def _on_ndi_fov_entry_changed(self, event=None):
-        """NDI FOV 杓稿叆妗嗘敼璁?"""
+        """NDI FOV entry"""
+        if self._runtime_settings_locked():
+            return
         if hasattr(self, 'ndi_fov_entry') and self.ndi_fov_entry.winfo_exists():
             try:
                 val = int(self.ndi_fov_entry.get())
@@ -7987,12 +8499,16 @@ class ViewerApp(ctk.CTk):
     
     # --- UDP FOV Callbacks ---
     def _on_udp_fov_enabled_changed(self):
-        """UDP FOV 鍟熺敤鐙€鎱嬫敼璁?"""
+        """UDP FOV enable"""
+        if self._runtime_settings_locked():
+            return
         if hasattr(self, 'var_udp_fov_enabled'):
             config.udp_fov_enabled = self.var_udp_fov_enabled.get()
     
     def _on_udp_fov_slider_changed(self, val):
-        """UDP FOV 婊戞鏀硅畩"""
+        """UDP FOV slider"""
+        if self._runtime_settings_locked():
+            return
         int_val = int(round(val))
         config.udp_fov = int_val
         if hasattr(self, 'udp_fov_entry') and self.udp_fov_entry.winfo_exists():
@@ -8001,7 +8517,9 @@ class ViewerApp(ctk.CTk):
         self._update_udp_fov_info()
     
     def _on_udp_fov_entry_changed(self, event=None):
-        """UDP FOV 杓稿叆妗嗘敼璁?"""
+        """UDP FOV entry"""
+        if self._runtime_settings_locked():
+            return
         if hasattr(self, 'udp_fov_entry') and self.udp_fov_entry.winfo_exists():
             try:
                 val = int(self.udp_fov_entry.get())
@@ -8090,7 +8608,7 @@ class ViewerApp(ctk.CTk):
 
         if hasattr(self, "hardware_details_toggle") and self.hardware_details_toggle.winfo_exists():
             self.hardware_details_toggle.configure(
-                text="Hardware Info ▼" if self._hardware_info_expanded else "Hardware Info ▶"
+                text=f"{t('Hardware Info')} {'▼' if self._hardware_info_expanded else '▶'}"
             )
 
         if hasattr(self, "hardware_details_label") and self.hardware_details_label.winfo_exists():
@@ -8107,11 +8625,11 @@ class ViewerApp(ctk.CTk):
         keyboard_connected = False
         keyboard_backend = keyboard_api if keyboard_enabled else "Disabled"
         details = [
-            f"Backend: {mode}",
-            f"Keyboard Enabled: {'Yes' if keyboard_enabled else 'No'}",
-            f"Keyboard API: {keyboard_api}",
-            f"Connected: {'Yes' if connected else 'No'}",
-            f"Auto Connect On Startup: {'Yes' if auto_connect else 'No'}",
+            t("Backend: {value}", value=mode),
+            t("Keyboard Enabled: {value}", value=t("Yes") if keyboard_enabled else t("No")),
+            t("Keyboard API: {value}", value=keyboard_api),
+            t("Connected: {value}", value=t("Yes") if connected else t("No")),
+            t("Auto Start On Startup: {value}", value=t("Yes") if auto_connect else t("No")),
         ]
 
         mouse_backend = None
@@ -8129,8 +8647,8 @@ class ViewerApp(ctk.CTk):
         except Exception:
             pass
 
-        details.append(f"Keyboard Backend Connected: {'Yes' if keyboard_connected else 'No'}")
-        details.append(f"Keyboard Active Backend: {keyboard_backend}")
+        details.append(t("Keyboard Backend Connected: {value}", value=t("Yes") if keyboard_connected else t("No")))
+        details.append(t("Keyboard Active Backend: {value}", value=keyboard_backend))
 
         if mode == "Net":
             ip = str(getattr(config, "net_ip", ""))
@@ -8296,13 +8814,13 @@ class ViewerApp(ctk.CTk):
             connected = False
 
         if hasattr(self, "hardware_type_label") and self.hardware_type_label.winfo_exists():
-            self.hardware_type_label.configure(text=f"Hardware: {mode}")
+            self.hardware_type_label.configure(text=t("Hardware: {mode}", mode=mode))
 
         if hasattr(self, "hardware_conn_label") and self.hardware_conn_label.winfo_exists():
             if connected:
-                self.hardware_conn_label.configure(text="Hardware Status: Connected", text_color=COLOR_SUCCESS)
+                self.hardware_conn_label.configure(text=t("Hardware Status: Connected"), text_color=COLOR_SUCCESS)
             else:
-                self.hardware_conn_label.configure(text="Hardware Status: Disconnected", text_color=COLOR_DANGER)
+                self.hardware_conn_label.configure(text=t("Hardware Status: Disconnected"), text_color=COLOR_DANGER)
 
         if (
             getattr(self, "_hardware_info_expanded", False)
@@ -8312,13 +8830,29 @@ class ViewerApp(ctk.CTk):
             self.hardware_details_label.configure(text=self._build_hardware_details_text(mode, connected))
 
     def _update_connection_status_loop(self):
-        is_conn = self.capture.is_connected()
-        current_mode = self.capture.mode
-        
-        if is_conn:
-            self._set_status_indicator(f"Status: Online ({current_mode})", COLOR_TEXT)
-        else:
-            self._set_status_indicator("Status: Offline", COLOR_TEXT_DIM)
+        if not getattr(self, "_runtime_busy", False):
+            is_conn = self.capture.is_connected()
+            current_mode = self.capture.mode
+            hw_ok = False
+            try:
+                from src.utils import mouse as mouse_backend
+
+                hw_ok = bool(getattr(mouse_backend, "is_connected", False))
+            except Exception:
+                hw_ok = False
+            if getattr(self, "_runtime_active", False):
+                if hw_ok and is_conn:
+                    self._set_status_indicator(t("Status: Running ({mode})", mode=current_mode), COLOR_SUCCESS)
+                elif hw_ok:
+                    self._set_status_indicator(t("Status: Running (capture down)"), COLOR_WARNING)
+                elif is_conn:
+                    self._set_status_indicator(t("Status: Running (hardware down)"), COLOR_WARNING)
+                else:
+                    self._set_status_indicator(t("Status: Runtime dropped"), COLOR_DANGER)
+            elif is_conn:
+                self._set_status_indicator(t("Status: Online ({mode})", mode=current_mode), COLOR_TEXT)
+            else:
+                self._set_status_indicator(t("Status: Offline"), COLOR_TEXT_DIM)
         self._update_hardware_status_ui()
         self._refresh_capture_entry_card()
         self.after(500, self._update_connection_status_loop)
@@ -8413,8 +8947,16 @@ class ViewerApp(ctk.CTk):
                 self.capture.ndi.set_selected_source(val)
 
     def _open_settings_window(self):
-        """鎵撻枊瑷疆瑕栫獥"""
-        SettingsWindow(self)
+        existing = getattr(self, "_settings_window", None)
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.lift()
+                    existing.focus_force()
+                    return
+            except Exception:
+                pass
+        self._settings_window = SettingsWindow(self)
     
     def _on_close(self):
         # 寰?tracker 鍚屾鏈€鏂扮殑瑷疆鍒?config锛堢⒑淇濇墍鏈夐亱琛屾檪鐨勮畩鏇撮兘琚繚瀛橈級
@@ -9754,8 +10296,8 @@ class SettingsWindow(ctk.CTkToplevel):
         super().__init__(parent)
         
         self.parent = parent
-        self.title("display settings")
-        self.geometry("400x600")
+        self.title(t("display settings"))
+        self.geometry("400x680")
         self.resizable(False, False)
         
         # 缃腑椤ず
@@ -9803,12 +10345,37 @@ class SettingsWindow(ctk.CTkToplevel):
         # 妯欓
         title_label = ctk.CTkLabel(
             content_frame,
-            text="DISPLAY SETTINGS",
+            text=t("DISPLAY SETTINGS"),
             font=("Roboto", 16, "bold"),
             text_color=COLOR_TEXT
         )
         title_label.pack(pady=(0, 20), anchor="w")
-        
+
+        self._add_section_title(content_frame, "LANGUAGE")
+        language_row = ctk.CTkFrame(content_frame, fg_color="transparent")
+        language_row.pack(fill="x", pady=(0, 8))
+        ctk.CTkLabel(
+            language_row,
+            text=t("Language"),
+            font=("Roboto", 12),
+            text_color=COLOR_TEXT,
+        ).pack(side="left")
+        language_names = i18n.display_names()
+        self.language_option = ctk.CTkOptionMenu(
+            language_row,
+            values=language_names or ["English"],
+            command=self._on_language_changed,
+            fg_color=COLOR_SURFACE,
+            button_color=COLOR_SURFACE,
+            button_hover_color=COLOR_BORDER,
+            dropdown_fg_color=COLOR_SURFACE,
+            text_color=COLOR_TEXT,
+            font=("Roboto", 12),
+            width=160,
+        )
+        self.language_option.pack(side="right")
+        self.language_option.set(i18n.name_for_code())
+
         # 鍒嗙祫1: 鍏ㄥ眬椤ず瑷疆
         self._add_section_title(content_frame, "VISUAL SETTINGS")
         
@@ -9892,7 +10459,7 @@ class SettingsWindow(ctk.CTkToplevel):
         # 鍙栨秷鎸夐垥 (Outlined)
         cancel_btn = ctk.CTkButton(
             button_frame,
-            text="CANCEL",
+            text=t("CANCEL"),
             command=self._on_cancel,
             fg_color="transparent",
             border_width=1,
@@ -9907,7 +10474,7 @@ class SettingsWindow(ctk.CTkToplevel):
         # 淇濆瓨鎸夐垥 (Filled)
         save_btn = ctk.CTkButton(
             button_frame,
-            text="SAVE",
+            text=t("SAVE"),
             command=self._on_save,
             fg_color=COLOR_TEXT,
             hover_color=COLOR_ACCENT_HOVER,
@@ -9919,9 +10486,9 @@ class SettingsWindow(ctk.CTkToplevel):
 
     def _add_section_title(self, parent, text):
         ctk.CTkLabel(
-            parent, 
-            text=text, 
-            font=("Roboto", 10, "bold"), 
+            parent,
+            text=heading(text),
+            font=("Roboto", 10, "bold"),
             text_color=COLOR_TEXT_DIM
         ).pack(anchor="w", pady=(10, 5))
 
@@ -9931,7 +10498,7 @@ class SettingsWindow(ctk.CTkToplevel):
     def _add_switch(self, parent, text, variable):
         switch = ctk.CTkSwitch(
             parent,
-            text=text,
+            text=t(text),
             variable=variable,
             fg_color=COLOR_SURFACE,
             progress_color=COLOR_ACCENT,
@@ -9945,7 +10512,7 @@ class SettingsWindow(ctk.CTkToplevel):
     def _add_grid_switch(self, parent, text, variable, row, col):
         switch = ctk.CTkSwitch(
             parent,
-            text=text,
+            text=t(text),
             variable=variable,
             fg_color=COLOR_SURFACE,
             progress_color=COLOR_ACCENT,
@@ -9955,10 +10522,61 @@ class SettingsWindow(ctk.CTkToplevel):
             font=("Roboto", 12)
         )
         switch.grid(row=row, column=col, sticky="w", pady=8, padx=5)
-    
+
+    def _snapshot_temp_settings(self):
+        if not hasattr(self, "show_opencv_var"):
+            return
+        self.temp_settings.update({
+            "show_opencv_windows": self.show_opencv_var.get(),
+            "show_opencv_mask": self.show_opencv_mask_var.get(),
+            "show_opencv_detection": self.show_opencv_detection_var.get(),
+            "show_opencv_roi": self.show_opencv_roi_var.get(),
+            "show_opencv_triggerbot_mask": self.show_opencv_triggerbot_mask_var.get(),
+            "show_ndi_raw_stream_window": self.show_ndi_raw_stream_var.get(),
+            "show_udp_raw_stream_window": self.show_udp_raw_stream_var.get(),
+            "show_mode_text": self.show_mode_var.get(),
+            "show_aimbot_status": self.show_aimbot_status_var.get(),
+            "show_triggerbot_status": self.show_triggerbot_status_var.get(),
+            "show_target_count": self.show_target_count_var.get(),
+            "show_crosshair": self.show_crosshair_var.get(),
+            "show_distance_text": self.show_distance_var.get(),
+        })
+
+    def _on_language_changed(self, val):
+        code = i18n.code_for_name(val)
+        if code == i18n.language:
+            return
+        self._snapshot_temp_settings()
+        config.language = i18n.set_language(code)
+        try:
+            config.save_to_file()
+        except Exception:
+            pass
+        if hasattr(self.parent, "_apply_language"):
+            self.parent._apply_language()
+        self._rebuild_ui()
+
+    def _rebuild_ui(self):
+        for child in self.winfo_children():
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        self.title(t("display settings"))
+        self._build_ui()
+        try:
+            self.lift()
+            self.grab_set()
+            self.focus_force()
+        except Exception:
+            pass
+
+    def _detach_from_parent(self):
+        if getattr(self.parent, "_settings_window", None) is self:
+            self.parent._settings_window = None
+
     def _on_save(self):
         """淇濆瓨瑷疆"""
-        # 鏇存柊閰嶇疆
         config.show_opencv_windows = self.show_opencv_var.get()
         config.show_opencv_mask = self.show_opencv_mask_var.get()
         config.show_opencv_detection = self.show_opencv_detection_var.get()
@@ -9972,13 +10590,12 @@ class SettingsWindow(ctk.CTkToplevel):
         config.show_target_count = self.show_target_count_var.get()
         config.show_crosshair = self.show_crosshair_var.get()
         config.show_distance_text = self.show_distance_var.get()
-        
-        # 淇濆瓨鍒版枃浠?
+        config.language = i18n.language
         config.save_to_file()
-        
-        # 闂滈枆瑕栫獥
+        self._detach_from_parent()
         self.destroy()
-    
+
     def _on_cancel(self):
         """鍙栨秷涓﹂棞闁?- 涓嶄繚瀛樹换浣曟洿鏀癸紝鎭㈠京鍘熷瑷疆"""
+        self._detach_from_parent()
         self.destroy()
