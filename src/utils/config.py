@@ -364,6 +364,7 @@ class Config:
         # Persist UI collapsible section open/closed state per tab.
         self.ui_collapsible_states = {}
         self.legacy_ui_mode = False
+        self.language = "en"
         
         # --- Capture Settings ---
         self.udp_ip = "127.0.0.1"
@@ -389,6 +390,8 @@ class Config:
         
         # --- CaptureCard Settings ---
         self.capture_device_index = 0
+        self.capture_device_name = ""
+        self.capture_opencv_backend = "dshow"
         self.capture_width = 1920
         self.capture_height = 1080
         self.capture_fps = 240
@@ -766,6 +769,7 @@ class Config:
             "show_distance_text": self.show_distance_text,
             "ui_collapsible_states": self.ui_collapsible_states,
             "legacy_ui_mode": self.legacy_ui_mode,
+            "language": self.language,
             
             # Capture Settings
             "udp_ip": self.udp_ip,
@@ -791,6 +795,8 @@ class Config:
             
             # CaptureCard Settings
             "capture_device_index": self.capture_device_index,
+            "capture_device_name": self.capture_device_name,
+            "capture_opencv_backend": self.capture_opencv_backend,
             "capture_width": self.capture_width,
             "capture_height": self.capture_height,
             "capture_fps": self.capture_fps,
@@ -848,6 +854,9 @@ class Config:
             )
         except Exception:
             self.capture_card_buffer_size_mb = 64
+        backend = str(getattr(self, "capture_opencv_backend", "dshow")).strip().lower().replace("_", " ").replace("-", " ")
+        self.capture_opencv_backend = "uvc" if backend in ("uvc", "msmf", "cap msmf", "media foundation", "opencv uvc") else "dshow"
+        self.capture_device_name = str(getattr(self, "capture_device_name", "")).strip()
         try:
             self.arduino_baud = int(getattr(self, "arduino_baud", 115200))
         except Exception:
