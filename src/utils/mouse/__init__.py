@@ -1304,29 +1304,18 @@ class Mouse:
         if hasattr(self, "_inited"):
             return
         auto_connect = False
-        serial_auto_switch_4m = False
         try:
             from src.utils.config import config
 
             auto_connect = bool(getattr(config, "auto_connect_mouse_api", False))
-            serial_auto_switch_4m = bool(getattr(config, "serial_auto_switch_4m", False))
         except Exception:
             auto_connect = False
-            serial_auto_switch_4m = False
 
+        disconnect_all()
         if auto_connect:
-            if not connect_to_makcu():
-                log_print(f"[ERROR] Mouse init failed to connect. reason={get_last_connect_error()}")
-            else:
-                Mouse._listener = state.listener_thread
-                if serial_auto_switch_4m and state.active_backend == "Serial":
-                    if switch_to_4m():
-                        log_print("[INFO] Startup auto-switch to 4M completed.")
-                    else:
-                        log_print("[WARN] Startup auto-switch to 4M failed.")
+            log_print("[INFO] Mouse waiting for unified START (auto-start enabled).")
         else:
-            disconnect_all()
-            log_print("[INFO] Mouse auto-connect disabled. Waiting for manual connect.")
+            log_print("[INFO] Mouse waiting for START.")
         self._inited = True
 
     def move(self, x: float, y: float):
