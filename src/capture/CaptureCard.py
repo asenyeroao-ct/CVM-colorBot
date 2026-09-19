@@ -11,6 +11,81 @@ import subprocess
 import threading
 from typing import Dict, List, Optional, Tuple
 
+OPENCV_BACKEND_DSHOW = "dshow"
+OPENCV_BACKEND_UVC = "uvc"
+
+
+def normalize_opencv_backend(value) -> str:
+    raw = str(value or "").strip().lower().replace("_", " ").replace("-", " ")
+    if raw in ("uvc", "msmf", "cap msmf", "media foundation", "opencv uvc"):
+        return OPENCV_BACKEND_UVC
+    return OPENCV_BACKEND_DSHOW
+
+
+def opencv_backend_display_name(value) -> str:
+    return "UVC" if normalize_opencv_backend(value) == OPENCV_BACKEND_UVC else "DirectShow"
+
+
+def opencv_backend_cv_ids(value) -> List[int]:
+    """DirectShow uses CAP_DSHOW; UVC on Windows uses Media Foundation (CAP_MSMF)."""
+    selected = normalize_opencv_backend(value)
+    backends: List[int] = []
+    if selected == OPENCV_BACKEND_UVC:
+        if hasattr(cv2, "CAP_MSMF"):
+            backends.append(int(cv2.CAP_MSMF))
+        backends.append(int(cv2.CAP_DSHOW))
+        return backends
+    backends.append(int(cv2.CAP_DSHOW))
+    backends.append(int(cv2.CAP_ANY))
+    return backends
+
+
+def opencv_backend_label(cv_id) -> str:
+    try:
+        backend_id = int(cv_id)
+    except Exception:
+        return str(cv_id)
+    if backend_id == int(cv2.CAP_DSHOW):
+        return "DirectShow"
+    if hasattr(cv2, "CAP_MSMF") and backend_id == int(cv2.CAP_MSMF):
+        return "UVC/MSMF"
+    if backend_id == int(cv2.CAP_ANY):
+        return "ANY"
+    return f"backend:{backend_id}"
+
+
+def _release_video_capture(cap):
+    if cap is None:
+        return
+    try:
+        cap.release()
+    except Exception:
+        pass
+
+
+def open_opencv_capture(backend: int, device_index: int, device_name: str = ""):
+    """Open a capture source. DirectShow also tries video=<friendly name>."""
+    sources = []
+    name = str(device_name or "").strip()
+    if int(backend) == int(cv2.CAP_DSHOW) and name:
+        sources.append(f"video={name}")
+    sources.append(int(device_index))
+
+    last_error = ""
+    for source in sources:
+        cap = None
+        try:
+            cap = cv2.VideoCapture(source, int(backend))
+            if cap is not None and cap.isOpened():
+                return cap
+            last_error = f"source {source!r} did not open"
+        except Exception as e:
+            last_error = str(e)
+        _release_video_capture(cap)
+    if last_error:
+        log_print(f"[CaptureCard] {opencv_backend_label(backend)} open failed: {last_error}")
+    return None
+
 
 class CaptureCardCamera:
     """Capture Card camera wrapper."""
@@ -21,7 +96,10 @@ class CaptureCardCamera:
         self.frame_width = int(getattr(config, "capture_width", 1920))
         self.frame_height = int(getattr(config, "capture_height", 1080))
         self.device_index = int(getattr(config, "capture_device_index", 0))
+        self.device_name = str(getattr(config, "capture_device_name", "")).strip()
         self.fourcc_pref = list(getattr(config, "capture_fourcc_preference", ["MJPG", "NV12", "YUY2", "YUYV", "BGR3"]))
+        self.opencv_backend = normalize_opencv_backend(getattr(config, "capture_opencv_backend", OPENCV_BACKEND_DSHOW))
+        self.target_fps = float(getattr(config, "capture_fps", 0) or 0)
 
         self.force_bgr = bool(getattr(config, "capture_card_force_bgr", True))
         self.set_convert_rgb = bool(getattr(config, "capture_card_set_convert_rgb", True))
@@ -35,20 +113,26 @@ class CaptureCardCamera:
         self.backend_used = None
         self.active_fourcc = None
 
-        # 固定優先使用 OpenCV DirectShow backend; fallback 只保底兼容性.
-        preferred_backends = [cv2.CAP_DSHOW, cv2.CAP_ANY]
+        preferred_backends = opencv_backend_cv_ids(self.opencv_backend)
+        log_print(
+            f"[CaptureCard] Opening device {self.device_index}"
+            f"{f' ({self.device_name})' if self.device_name else ''} "
+            f"via OpenCV {opencv_backend_display_name(self.opencv_backend)}"
+        )
 
         for backend in preferred_backends:
-            self.cap = cv2.VideoCapture(self.device_index, backend)
-            if not self.cap.isOpened():
-                if self.cap:
-                    self.cap.release()
-                self.cap = None
+            self.cap = open_opencv_capture(backend, self.device_index, self.device_name)
+            if self.cap is None:
                 continue
 
             self.backend_used = backend
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(self.frame_width))
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(self.frame_height))
+            if self.target_fps > 0:
+                try:
+                    self.cap.set(cv2.CAP_PROP_FPS, float(self.target_fps))
+                except Exception:
+                    pass
 
             if self.set_convert_rgb and hasattr(cv2, "CAP_PROP_CONVERT_RGB"):
                 try:
@@ -109,7 +193,10 @@ class CaptureCardCamera:
                     pass
 
             actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
-            log_print(f"[CaptureCard] Successfully opened camera {self.device_index} with backend {backend}")
+            log_print(
+                f"[CaptureCard] Successfully opened camera {self.device_index} "
+                f"with {opencv_backend_label(backend)}"
+            )
             log_print(f"[CaptureCard] Resolution: {self.frame_width}x{self.frame_height}, FPS: {actual_fps}")
             log_print(f"[CaptureCard] Requested buffer size: {self.buffer_size_mb} MB")
             if self.active_fourcc:
@@ -117,7 +204,10 @@ class CaptureCardCamera:
             break
 
         if self.cap is None or not self.cap.isOpened():
-            raise RuntimeError(f"Failed to open capture card at device index {self.device_index}")
+            raise RuntimeError(
+                f"Failed to open capture card at device index {self.device_index} "
+                f"({opencv_backend_display_name(self.opencv_backend)})"
+            )
 
     def _try_enable_hardware_acceleration(self):
         """Try enabling hardware acceleration if supported by backend/OpenCV build."""
@@ -125,7 +215,7 @@ class CaptureCardCamera:
             return
 
         try:
-            if self.backend_used == cv2.CAP_MSMF:
+            if hasattr(cv2, "CAP_MSMF") and self.backend_used == cv2.CAP_MSMF:
                 try:
                     if hasattr(cv2, "CAP_PROP_HW_ACCELERATION"):
                         self.cap.set(cv2.CAP_PROP_HW_ACCELERATION, 1)
@@ -400,7 +490,10 @@ CAPTURE_NAME_KEYWORDS = (
     "cam link",
     "live gamer",
     "usb video",
+    "uvc",
     "hdmi",
+    "game capture",
+    "video capture",
 )
 
 
@@ -470,7 +563,9 @@ $devices | ConvertTo-Json -Compress
             if not name:
                 continue
             lowered = name.lower()
-            if not any(keyword in lowered for keyword in CAPTURE_NAME_KEYWORDS):
+            service = str(item.get("Service", "")).strip().lower()
+            is_uvc = "usbvideo" in service
+            if not is_uvc and not any(keyword in lowered for keyword in CAPTURE_NAME_KEYWORDS):
                 continue
             if any(skip in lowered for skip in ("audio", "proxy", "wave extensible", "voicemeeter")):
                 continue
@@ -590,22 +685,35 @@ def probe_capture_card_device(
     heights: Optional[List[int]] = None,
     fps_values: Optional[List[float]] = None,
     fourcc_values: Optional[List[str]] = None,
+    backend: str = OPENCV_BACKEND_DSHOW,
+    device_name: str = "",
 ) -> Dict[str, object]:
-    """Probe a capture device for resolution/FPS/fourcc support / 自動探測裝置能力."""
+    """Probe a capture device for resolution/FPS/fourcc support."""
+    selected_backend = normalize_opencv_backend(backend)
+    backend_ids = opencv_backend_cv_ids(selected_backend)
     result: Dict[str, object] = {
         "device_index": int(device_index),
         "success": False,
-        "backend": "DShow",
+        "backend": opencv_backend_display_name(selected_backend),
         "formats": [],
         "message": "",
     }
 
     cap = None
+    opened_backend = None
     try:
-        cap = cv2.VideoCapture(int(device_index), cv2.CAP_DSHOW)
-        if not cap or not cap.isOpened():
-            result["message"] = f"Failed to open device {device_index} with DShow."
+        for backend_id in backend_ids:
+            cap = open_opencv_capture(backend_id, int(device_index), device_name)
+            if cap is not None:
+                opened_backend = backend_id
+                break
+        if cap is None or not cap.isOpened():
+            result["message"] = (
+                f"Failed to open device {device_index} with "
+                f"{opencv_backend_display_name(selected_backend)}."
+            )
             return result
+        result["backend"] = opencv_backend_label(opened_backend)
 
         widths = widths or [3840, 2560, 1920, 1600, 1280, 1024, 960, 800, 640]
         heights = heights or [2160, 1440, 1080, 900, 720, 768, 600, 480]
@@ -686,6 +794,8 @@ def get_default_capture_card_config() -> dict:
         "capture_height": 1080,
         "capture_fps": 240,
         "capture_device_index": 0,
+        "capture_device_name": "",
+        "capture_opencv_backend": OPENCV_BACKEND_DSHOW,
         "capture_fourcc_preference": ["MJPG", "NV12", "YUY2", "YUYV", "BGR3"],
         "capture_card_force_bgr": True,
         "capture_card_set_convert_rgb": True,
@@ -705,7 +815,8 @@ def apply_capture_card_config(config, **kwargs):
     """Apply capture-card config values to an existing config object."""
     valid_keys = {
         "capture_width", "capture_height", "capture_fps",
-        "capture_device_index", "capture_fourcc_preference",
+        "capture_device_index", "capture_device_name", "capture_opencv_backend",
+        "capture_fourcc_preference",
         "capture_card_force_bgr", "capture_card_set_convert_rgb",
         "capture_card_probe_frames", "capture_card_debug_color_log",
         "capture_card_buffer_size_mb",
