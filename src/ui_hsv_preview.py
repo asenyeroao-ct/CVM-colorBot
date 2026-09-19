@@ -13,6 +13,7 @@ from PIL import Image, ImageTk
 
 from src.utils.config import config
 from src.utils.debug_logger import log_print
+from src.utils.i18n import t
 
 COLOR_BG = "#121212"
 COLOR_SURFACE = "#1E1E1E"
@@ -119,7 +120,7 @@ class HsvPreviewWindow(ctk.CTkToplevel):
     # ------------------------------------------------------------------
 
     def _build_ui(self):
-        self.title("HSV Filter Preview")
+        self.title(t("HSV Filter Preview"))
         self.configure(fg_color=COLOR_BG)
         self.resizable(True, True)
         self.attributes("-topmost", True)
@@ -128,13 +129,13 @@ class HsvPreviewWindow(ctk.CTkToplevel):
         title_bar.pack(fill="x")
         ctk.CTkLabel(
             title_bar,
-            text="HSV FILTER PREVIEW",
+            text=t("HSV FILTER PREVIEW"),
             font=FONT_TITLE,
             text_color=COLOR_TEXT,
         ).pack(side="left", padx=16, pady=10)
         ctk.CTkLabel(
             title_bar,
-            text="Adjust sliders and see the result in real time",
+            text=t("Adjust sliders and see the result in real time"),
             font=FONT_SMALL,
             text_color=COLOR_TEXT_DIM,
         ).pack(side="left", padx=4)
@@ -154,7 +155,7 @@ class HsvPreviewWindow(ctk.CTkToplevel):
         orig_col.pack(side="left", expand=True, fill="both", padx=(0, 6))
         ctk.CTkLabel(
             orig_col,
-            text="ORIGINAL",
+            text=t("ORIGINAL"),
             font=FONT_SMALL,
             text_color=COLOR_TEXT_DIM,
         ).pack(pady=(6, 2))
@@ -171,7 +172,7 @@ class HsvPreviewWindow(ctk.CTkToplevel):
         res_col.pack(side="left", expand=True, fill="both", padx=(6, 6))
         ctk.CTkLabel(
             res_col,
-            text="WITH FILTER",
+            text=t("WITH FILTER"),
             font=FONT_SMALL,
             text_color=COLOR_TEXT_DIM,
         ).pack(pady=(6, 2))
@@ -188,7 +189,7 @@ class HsvPreviewWindow(ctk.CTkToplevel):
         mask_col.pack(side="left", expand=True, fill="both", padx=(6, 0))
         ctk.CTkLabel(
             mask_col,
-            text="MASK",
+            text=t("MASK"),
             font=FONT_SMALL,
             text_color=COLOR_TEXT_DIM,
         ).pack(pady=(6, 2))
@@ -210,7 +211,7 @@ class HsvPreviewWindow(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             sliders_frame,
-            text="HSV RANGE",
+            text=t("HSV RANGE"),
             font=FONT_BOLD,
             text_color=COLOR_TEXT_DIM,
         ).pack(anchor="w", padx=14, pady=(10, 4))
@@ -240,7 +241,7 @@ class HsvPreviewWindow(ctk.CTkToplevel):
 
         self._lbl_pixels = ctk.CTkLabel(
             btn_row,
-            text="Detected pixels: 0",
+            text=t("Detected pixels: 0"),
             font=FONT_SMALL,
             text_color=COLOR_TEXT_DIM,
         )
@@ -248,7 +249,7 @@ class HsvPreviewWindow(ctk.CTkToplevel):
 
         self._lbl_pick = ctk.CTkLabel(
             btn_row,
-            text="Pick mode: Off",
+            text=t("Pick mode: Off"),
             font=FONT_SMALL,
             text_color=COLOR_TEXT_DIM,
         )
@@ -256,7 +257,7 @@ class HsvPreviewWindow(ctk.CTkToplevel):
 
         ctk.CTkButton(
             btn_row,
-            text="Close",
+            text=t("Close"),
             width=100,
             height=32,
             fg_color=COLOR_SURFACE,
@@ -269,7 +270,7 @@ class HsvPreviewWindow(ctk.CTkToplevel):
 
         ctk.CTkButton(
             btn_row,
-            text="Apply to Config",
+            text=t("Apply to Config"),
             width=160,
             height=32,
             fg_color=COLOR_SUCCESS,
@@ -282,7 +283,7 @@ class HsvPreviewWindow(ctk.CTkToplevel):
 
         ctk.CTkButton(
             btn_row,
-            text="Reset",
+            text=t("Reset"),
             width=80,
             height=32,
             fg_color=COLOR_SURFACE,
@@ -320,7 +321,7 @@ class HsvPreviewWindow(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             row,
-            text="Low",
+            text=t("Low"),
             font=FONT_SMALL,
             text_color=COLOR_TEXT_DIM,
             width=30,
@@ -352,7 +353,7 @@ class HsvPreviewWindow(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             row,
-            text="High",
+            text=t("High"),
             font=FONT_SMALL,
             text_color=COLOR_TEXT_DIM,
             width=30,
@@ -427,7 +428,7 @@ class HsvPreviewWindow(ctk.CTkToplevel):
         self._s_hi.set(int(getattr(config, "custom_hsv_max_s", 255)))
         self._v_lo.set(int(getattr(config, "custom_hsv_min_v", 0)))
         self._v_hi.set(int(getattr(config, "custom_hsv_max_v", 255)))
-        self._lbl_pick.configure(text="Pick mode: Off")
+        self._lbl_pick.configure(text=t("Pick mode: Off"))
 
     def _toggle_eyedropper(self):
         self._set_eyedropper_active(not self._eyedropper_active)
@@ -445,7 +446,7 @@ class HsvPreviewWindow(ctk.CTkToplevel):
                 hover_color="#388E3C",
                 text_color="#000000",
             )
-            self._lbl_pick.configure(text="Pick mode: ON (click preview)")
+            self._lbl_pick.configure(text=t("Pick mode: ON (click preview)"))
         else:
             self._btn_eyedropper.configure(
                 fg_color=COLOR_SURFACE,
